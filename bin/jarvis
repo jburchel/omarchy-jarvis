@@ -1,0 +1,149 @@
+#!/bin/bash
+# jarvis <command>  — setup and control for the Jarvis voice plugin
+#   setup            install venv, edge-tts, piper, default voice, config
+#   test [engine]    speak a test line (engine: edge | piper | espeak)
+#   say "text"       speak arbitrary text
+#   mute | unmute    silence / restore all speech
+#   status           show engines, voices, config, mute state
+#   voices           list installed Piper voices and a few Edge suggestions
+#   voice <name>     set the Edge voice (en-GB-RyanNeural, en-US-GuyNeural ...)
+#   piper-voice <n>  download and set a Piper voice (en_GB-alan-medium ...)
+#   hush             stop speaking now and drop anything queued
+#   dictate          hush, then start dictation (JARVIS_DICTATE_CMD)
+#   listen <cmd>     wake word: enable | disable | start | stop | status | run
+#   state            print the current state (idle | speaking | listening | muted | off)
+#   pronounce <word> <how>   teach a pronunciation ("plugin" "plug-in"); no args lists them
+#   log              tail the log
+BIN="$(dirname "$(readlink -f "$0")")"
+. "$BIN/jarvis-env"
+
+hush() {
+  # Bump the epoch first so anything waiting on the play lock exits instead of speaking.
+  echo $(( $(jarvis_epoch) + 1 )) > "$JARVIS_HUSH_EPOCH"
+  if [ -f "$JARVIS_PLAYER_PID" ]; then
+    pid="$(cat "$JARVIS_PLAYER_PID")"; kill "$pid" 2>/dev/null; rm -f "$JARVIS_PLAYER_PID"
+  fi
+  # Belt and braces: any player still holding one of our temp files.
+  pkill -f "$JARVIS_CACHE/say\." 2>/dev/null
+  command -v qs >/dev/null && qs -p "$(dirname "$BIN")/viz" ipc call viz stop >/dev/null 2>&1
+  jarvis_muted && jarvis_state muted || jarvis_state idle
+  jarvis_log "hush"
+}
+
+unit_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/jarvis-listen.service"; }
+
+set_cfg() { # set_cfg KEY VALUE  (idempotent edit of config.sh)
+  mkdir -p "$JARVIS_CONFIG_DIR"; local f="$JARVIS_CONFIG_DIR/config.sh"; touch "$f"
+  if grep -q "^$1=" "$f"; then sed -i "s|^$1=.*|$1=\"$2\"|" "$f"; else echo "$1=\"$2\"" >> "$f"; fi
+}
+
+case "${1:-status}" in
+setup)
+  mkdir -p "$JARVIS_HOME" "$JARVIS_VOICES" "$JARVIS_CONFIG_DIR"
+  [ -x "$JARVIS_VENV/bin/python" ] || python3 -m venv "$JARVIS_VENV"
+  "$JARVIS_VENV/bin/pip" install -q --upgrade pip edge-tts piper-tts
+  if [ ! -f "$JARVIS_VOICES/$JARVIS_PIPER_VOICE.onnx" ]; then
+    (cd "$JARVIS_VOICES" && "$JARVIS_VENV/bin/python" -m piper.download_voices "$JARVIS_PIPER_VOICE")
+  fi
+  if [ ! -f "$JARVIS_CONFIG_DIR/config.sh" ]; then
+    sed -n '/^# ---- defaults/,/^\[ -f/p' "$BIN/jarvis-env" | grep -E '^: "\$\{JARVIS_' | sed -E 's/^: "\$\{([A-Z_]+):=([^}]*)\}"/# \1="\2"/' > "$JARVIS_CONFIG_DIR/config.sh"
+    sed -i '1i # Jarvis config — uncomment and edit any line to override the default.\n' "$JARVIS_CONFIG_DIR/config.sh"
+  fi
+  command -v mpv >/dev/null || command -v ffplay >/dev/null || command -v pw-play >/dev/null \
+    || echo "WARNING: no audio player found (install mpv)"
+  # A short two-tone chime for wake / dictation start.
+  [ -f "$JARVIS_HOME/chime.wav" ] || "$JARVIS_VENV/bin/python" - "$JARVIS_HOME/chime.wav" <<'PY'
+import math, struct, sys, wave
+rate, out = 22050, sys.argv[1]
+def tone(f, ms, vol=0.35):
+    n = int(rate * ms / 1000)
+    return [vol * math.sin(2*math.pi*f*i/rate) * min(1, (n-i)/(n*0.4)) for i in range(n)]
+samples = tone(880, 90) + tone(1320, 140)
+with wave.open(out, "w") as w:
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+    w.writeframes(b"".join(struct.pack("<h", int(s*32767)) for s in samples))
+PY
+  jarvis_state idle
+  echo "Jarvis setup complete."; "$BIN/jarvis-say" "Setup complete, $JARVIS_ADDRESS. All systems online." ;;
+test)
+  e="${2:-}"; [ -n "$e" ] && set -- --engine "$e" || set --
+  "$BIN/jarvis-say" "$@" "Good day, $JARVIS_ADDRESS. This is a test of the ${e:-primary} voice." ;;
+say)  shift; "$BIN/jarvis-say" "$@" ;;
+mute)   mkdir -p "$JARVIS_CONFIG_DIR"; touch "$JARVIS_CONFIG_DIR/muted"; hush; echo "Jarvis muted." ;;
+unmute) rm -f "$JARVIS_CONFIG_DIR/muted"; jarvis_state idle; echo "Jarvis unmuted."; "$BIN/jarvis-say" "Back online, $JARVIS_ADDRESS." ;;
+toggle-mute) if jarvis_muted; then "$0" unmute; else "$0" mute; fi ;;
+hush)   hush ;;
+dictate)
+  hush
+  # Only chime when we are *starting* a recording, not stopping one.
+  vstate="$(cat "${XDG_RUNTIME_DIR:-/tmp}/voxtype/state" 2>/dev/null)"
+  if [ "$vstate" != recording ] && [ "$JARVIS_WAKE_CHIME" = 1 ] && [ -f "$JARVIS_HOME/chime.wav" ]; then
+    (mpv --no-video --really-quiet --no-terminal "$JARVIS_HOME/chime.wav" 2>/dev/null || pw-play "$JARVIS_HOME/chime.wav" 2>/dev/null) &
+  fi
+  jarvis_state listening
+  $JARVIS_DICTATE_CMD
+  # Voxtype returns immediately; the listen daemon (or the next say) resets state.
+  [ "$vstate" = recording ] && { jarvis_muted && jarvis_state muted || jarvis_state idle; } ;;
+state)  cat "$JARVIS_STATE" 2>/dev/null || echo idle ;;
+pronounce)
+  f="$JARVIS_CONFIG_DIR/pronounce.txt"; mkdir -p "$JARVIS_CONFIG_DIR"
+  if [ -z "$2" ]; then cat "$f" 2>/dev/null || echo "no pronunciations yet: jarvis pronounce <word> <how to say it>"; exit 0; fi
+  [ -z "$3" ] && { echo "usage: jarvis pronounce <word> <how to say it>"; exit 1; }
+  touch "$f"; grep -iv "^$2=" "$f" > "$f.tmp"; printf '%s=%s\n' "$2" "$3" >> "$f.tmp"; mv -f "$f.tmp" "$f"
+  echo "$2 → $3"; "$BIN/jarvis-say" "The word $2, $JARVIS_ADDRESS." ;;
+listen)
+  case "${2:-status}" in
+    run)    exec "$JARVIS_VENV/bin/python" "$BIN/jarvis-listen" ;;
+    start)  systemctl --user start jarvis-listen.service && echo "listening for 'Hey Jarvis'" ;;
+    stop)   systemctl --user stop jarvis-listen.service; echo "wake word stopped" ;;
+    enable)
+      [ -x "$JARVIS_VENV/bin/python" ] || { echo "run 'jarvis setup' first"; exit 1; }
+      "$JARVIS_VENV/bin/python" -c 'import openwakeword' 2>/dev/null || "$JARVIS_VENV/bin/pip" install -q openwakeword
+      "$JARVIS_VENV/bin/python" "$BIN/jarvis-listen" --download-models
+      mkdir -p "$(dirname "$(unit_file)")"
+      cat > "$(unit_file)" <<EOF
+[Unit]
+Description=Jarvis wake word ("Hey Jarvis")
+After=pipewire.service wireplumber.service graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=$BIN/jarvis listen run
+Restart=on-failure
+RestartSec=3
+Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+      systemctl --user daemon-reload
+      systemctl --user enable --now jarvis-listen.service
+      echo "wake word enabled — say 'Hey Jarvis'" ;;
+    disable) systemctl --user disable --now jarvis-listen.service 2>/dev/null; rm -f "$(unit_file)"; systemctl --user daemon-reload; jarvis_state idle; echo "wake word disabled" ;;
+    status)  systemctl --user is-active jarvis-listen.service 2>/dev/null || echo inactive ;;
+    *) echo "usage: jarvis listen enable|disable|start|stop|status|run"; exit 1 ;;
+  esac ;;
+status)
+  echo "muted:        $(jarvis_muted && echo yes || echo no)"
+  echo "engine:       $JARVIS_ENGINE"
+  echo "edge-tts:     $([ -x "$JARVIS_VENV/bin/edge-tts" ] && echo "ok ($JARVIS_EDGE_VOICE)" || echo missing)"
+  echo "piper:        $([ -f "$JARVIS_VOICES/$JARVIS_PIPER_VOICE.onnx" ] && echo "ok ($JARVIS_PIPER_VOICE)" || echo "missing voice $JARVIS_PIPER_VOICE")"
+  echo "espeak-ng:    $(command -v espeak-ng >/dev/null && echo ok || echo missing)"
+  echo "summary:      $JARVIS_SUMMARY ($JARVIS_SUMMARY_MODEL)"
+  echo "narrate:      $JARVIS_NARRATE ($JARVIS_NARRATE_TOOLS)"
+  echo "greet/idle:   $JARVIS_GREET / $JARVIS_IDLE_ALERT"
+  echo "state:        $(cat "$JARVIS_STATE" 2>/dev/null || echo idle)"
+  echo "wake word:    $(systemctl --user is-active jarvis-listen.service 2>/dev/null || echo inactive) (threshold $JARVIS_WAKE_THRESHOLD, action $JARVIS_WAKE_ACTION)"
+  echo "config:       $JARVIS_CONFIG_DIR/config.sh"
+  echo "log:          $JARVIS_LOG" ;;
+voices)
+  echo "Installed Piper voices:"; ls "$JARVIS_VOICES" 2>/dev/null | grep '\.onnx$' | sed 's/\.onnx$//; s/^/  /'
+  echo "Edge voices (British male picks): en-GB-RyanNeural en-GB-ThomasNeural en-US-GuyNeural en-US-ChristopherNeural"
+  echo "Full list: $JARVIS_VENV/bin/edge-tts --list-voices" ;;
+voice) set_cfg JARVIS_EDGE_VOICE "$2"; echo "Edge voice set to $2"; JARVIS_EDGE_VOICE="$2" "$BIN/jarvis-say" --engine edge "This is $2, $JARVIS_ADDRESS." ;;
+piper-voice)
+  (cd "$JARVIS_VOICES" && "$JARVIS_VENV/bin/python" -m piper.download_voices "$2") && set_cfg JARVIS_PIPER_VOICE "$2" \
+  && JARVIS_PIPER_VOICE="$2" "$BIN/jarvis-say" --engine piper "This is $2, $JARVIS_ADDRESS." ;;
+log) tail -n "${2:-30}" "$JARVIS_LOG" 2>/dev/null || echo "no log yet" ;;
+*) sed -n '2,13p' "$0"; exit 1 ;;
+esac

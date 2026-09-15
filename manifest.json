@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.jburchel.jarvis",
+  "name": "Jarvis",
+  "version": "0.1.0",
+  "author": "Jim Burchel",
+  "license": "MIT",
+  "description": "Jarvis voice assistant: state indicator, mute, hush, and 'Hey Jarvis' wake word control",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Jarvis",
+    "description": "Voice assistant state — click to mute, right-click to hush, middle-click to toggle wake word",
+    "category": "System",
+    "allowMultiple": false
+  }
+}

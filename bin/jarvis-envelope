@@ -1,0 +1,15 @@
+#!/bin/bash
+# jarvis-envelope <audiofile>  → comma-separated loudness levels (0..1), 20 per second.
+# Used to drive the visualizer in sync with playback without capturing audio output.
+f="$1"; [ -f "$f" ] || exit 1
+ffmpeg -v quiet -i "$f" -ac 1 -ar 8000 -f s16le - 2>/dev/null | python3 -c '
+import sys, array, math
+a = array.array("h"); a.frombytes(sys.stdin.buffer.read())
+win = 400  # 50 ms at 8 kHz
+rms = []
+for i in range(0, len(a), win):
+    c = a[i:i+win]
+    rms.append(math.sqrt(sum(x*x for x in c) / max(1, len(c))))
+peak = max(rms) or 1
+print(",".join("%.2f" % min(1.0, (r / peak) ** 0.7) for r in rms))
+'

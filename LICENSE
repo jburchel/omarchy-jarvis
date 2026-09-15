@@ -1,0 +1,51 @@
+MIT License
+
+Copyright (c) 2026 Jim Burchel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Third-party components
+
+This plugin does not vendor any third-party code. `jarvis setup` and
+`jarvis listen enable` install the following into a private Python virtual
+environment (~/.local/share/jarvis/venv); each is governed by its own license:
+
+  edge-tts        GPL-3.0     https://github.com/rany2/edge-tts
+                  Client for Microsoft Edge's online neural TTS. Speech text is
+                  sent to Microsoft; see their terms.
+  piper-tts       MIT         https://github.com/rhasspy/piper
+                  Offline neural TTS. Voice models (e.g. en_GB-alan-medium) are
+                  downloaded from Hugging Face under their own licenses (most are
+                  CC-BY or public domain; see each voice's MODEL_CARD).
+  openwakeword    Apache-2.0  https://github.com/dscripka/openWakeWord
+                  Wake-word detection; bundles the pretrained "hey_jarvis" model.
+  onnxruntime     MIT         https://github.com/microsoft/onnxruntime
+  numpy           BSD-3       https://numpy.org
+
+Runtime dependencies expected on the system (not installed by this plugin):
+
+  Quickshell      LGPL-3.0    https://quickshell.org        (bar widget, visualizer)
+  mpv             GPL-2.0+    https://mpv.io                (playback; ffplay/pw-play also work)
+  PipeWire        MIT         https://pipewire.org          (pw-record for the wake word)
+  Voxtype         MIT         https://github.com/peteonrails/voxtype
+                  Optional; the default dictation target for "Hey Jarvis".
+  espeak-ng       GPL-3.0     https://github.com/espeak-ng/espeak-ng
+                  Optional last-resort TTS engine.

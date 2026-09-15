@@ -1,0 +1,130 @@
+#!/bin/bash
+# jarvis-say [--low] [--engine edge|piper|espeak] "text"   (or text on stdin)
+# Synthesizes speech with Edge TTS, falling back to Piper, then espeak-ng,
+# and plays it. Playback is serialized with a lock; --low means "drop this
+# line if something is already speaking" (used for tool narration).
+BIN="$(dirname "$(readlink -f "$0")")"
+. "$BIN/jarvis-env"
+
+low=0; engine="$JARVIS_ENGINE"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --low) low=1; shift ;;
+    --engine) engine="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+text="$*"; [ -z "$text" ] && text="$(cat)"
+text="$(printf '%s' "$text" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
+[ -z "$text" ] && exit 0
+jarvis_muted && exit 0
+# Pronunciation fixes: ~/.config/jarvis/pronounce.txt, one `word=how to say it` per line,
+# whole-word, case-insensitive. Applied to what is spoken, not what is logged.
+spoken="$text"
+if [ -s "$JARVIS_CONFIG_DIR/pronounce.txt" ]; then
+  spoken="$(printf '%s' "$text" | python3 -c '
+import re, sys
+rules = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    line = line.strip()
+    if not line or line.startswith("#") or "=" not in line: continue
+    w, s = line.split("=", 1); rules.append((w.strip(), s.strip()))
+t = sys.stdin.read()
+for w, s in rules:
+    t = re.sub(r"(?<![\w-])" + re.escape(w) + r"(?![\w-])", s, t, flags=re.I)
+print(t, end="")' "$JARVIS_CONFIG_DIR/pronounce.txt")"
+fi
+epoch_at_start="$(jarvis_epoch)"   # a hush after this point cancels the line
+
+lock="$JARVIS_CACHE/play.lock"
+out="$(mktemp "$JARVIS_CACHE/say.XXXXXX")"
+trap 'rm -f "$out" "$out".*' EXIT
+
+# --- synthesis backends -------------------------------------------------------
+synth_edge() {
+  [ -x "$JARVIS_VENV/bin/edge-tts" ] || return 1
+  timeout "$JARVIS_EDGE_TIMEOUT" "$JARVIS_VENV/bin/edge-tts" \
+    --voice "$JARVIS_EDGE_VOICE" --rate="$JARVIS_EDGE_RATE" \
+    --text "$spoken" --write-media "$out.mp3" >/dev/null 2>&1 \
+    && [ -s "$out.mp3" ] && echo "$out.mp3"
+}
+synth_piper() {
+  [ -x "$JARVIS_VENV/bin/piper" ] || return 1
+  local model="$JARVIS_VOICES/$JARVIS_PIPER_VOICE.onnx"
+  [ -f "$model" ] || return 1
+  printf '%s' "$spoken" | timeout 30 "$JARVIS_VENV/bin/piper" -m "$model" \
+    --length-scale "$JARVIS_PIPER_LENGTH" -f "$out.wav" >/dev/null 2>&1 \
+    && [ -s "$out.wav" ] && echo "$out.wav"
+}
+synth_espeak() {
+  command -v espeak-ng >/dev/null || return 1
+  espeak-ng -v en-gb -s 165 -w "$out.wav" "$spoken" >/dev/null 2>&1 \
+    && [ -s "$out.wav" ] && echo "$out.wav"
+}
+
+file=""
+case "$engine" in
+  edge)   file="$(synth_edge)" ;;
+  piper)  file="$(synth_piper)" ;;
+  espeak) file="$(synth_espeak)" ;;
+  *)      file="$(synth_edge)" || file="$(synth_piper)" || file="$(synth_espeak)" ;;
+esac
+if [ -z "$file" ]; then jarvis_log "FAIL synth: $text"; exit 1; fi
+jarvis_log "say[${file##*.}$([ "$low" = 1 ] && echo " low")]: $text"
+
+# --- playback -------------------------------------------------------------------
+play() {
+  local p="$JARVIS_PLAYER"
+  if [ -z "$p" ]; then
+    for c in mpv ffplay pw-play paplay; do command -v "$c" >/dev/null && { p="$c"; break; }; done
+  fi
+  # Run the player in the background and publish its PID so `jarvis hush` can kill it.
+  case "$p" in
+    mpv)    mpv --no-video --really-quiet --no-terminal "$1" & ;;
+    ffplay) ffplay -nodisp -autoexit -loglevel quiet "$1" & ;;
+    pw-play|paplay)
+      case "$1" in *.wav) "$p" "$1" & ;; *) mpv --no-video --really-quiet --no-terminal "$1" & ;; esac ;;
+    *) jarvis_log "no audio player found"; return 1 ;;
+  esac
+  local pid=$!
+  echo "$pid" > "$JARVIS_PLAYER_PID"
+  wait "$pid"; local rc=$?
+  rm -f "$JARVIS_PLAYER_PID"
+  return $rc
+}
+
+# --- visualizer (quickshell overlay, driven over IPC) -----------------------------
+VIZ_DIR="$(dirname "$BIN")/viz"
+viz_on() { [ "$JARVIS_VIZ" = 1 ] && [ -n "$WAYLAND_DISPLAY" ] && command -v qs >/dev/null; }
+theme_color() { omarchy-theme-color "$1" "$2" 2>/dev/null || echo "$3"; }
+viz_ensure() {
+  export JARVIS_VIZ_ACCENT="${JARVIS_VIZ_ACCENT:-$(theme_color cyan blue '#4FC3F7')}"
+  export JARVIS_VIZ_GLOW="${JARVIS_VIZ_GLOW:-$(theme_color accent green '#39A949')}"
+  export JARVIS_VIZ_FG="${JARVIS_VIZ_FG:-$(theme_color foreground '' '#C9D4E0')}"
+  export JARVIS_VIZ_BG="${JARVIS_VIZ_BG:-$(theme_color background '' '#0C1B2E')}"
+  export JARVIS_VIZ_FONT
+  # 9>&- : the daemon must not inherit the play lock fd, or it holds the lock forever.
+  qs -p "$VIZ_DIR" -n -d >/dev/null 2>&1 9>&- || true
+}
+viz_call() { qs -p "$VIZ_DIR" ipc call viz "$@" >/dev/null 2>&1 || true; }
+
+exec 9>"$lock"
+if [ "$low" = 1 ]; then
+  # Narration: don't queue behind other speech; if busy, drop it.
+  flock -n 9 || exit 0
+else
+  flock -w 60 9
+fi
+# If the user hushed while this line was waiting its turn, it is stale — drop it.
+if [ "$(jarvis_epoch)" != "$epoch_at_start" ]; then jarvis_log "dropped (hushed): $text"; exit 0; fi
+jarvis_state speaking
+if viz_on; then
+  viz_ensure
+  viz_call speak "$text" "$("$BIN/jarvis-envelope" "$file")"
+  play "$file"
+  viz_call stop
+else
+  play "$file"
+fi
+jarvis_muted && jarvis_state muted || jarvis_state idle

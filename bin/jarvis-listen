@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""jarvis-listen — always-on "Hey Jarvis" wake word.
+
+Reads 16 kHz mono PCM from `pw-record`, runs openWakeWord's pretrained
+`hey_jarvis` model on 80 ms frames, and on detection runs `jarvis dictate`
+(hush → chime → start dictation) or `jarvis hush`, per JARVIS_WAKE_ACTION.
+
+Run under systemd via `jarvis listen enable`; `--download-models` fetches the
+model files once. Agent-agnostic: dictation lands in whatever window is focused.
+"""
+import os
+import subprocess
+import sys
+import time
+
+BIN = os.path.dirname(os.path.realpath(__file__))
+FRAME = 1280  # samples = 80 ms at 16 kHz, openWakeWord's native chunk
+
+
+def env():
+    """Source jarvis-env through bash so config.sh precedence is identical to the shell scripts."""
+    out = subprocess.run(
+        ["bash", "-c", f'set -a; . "{BIN}/jarvis-env"; env'], capture_output=True, text=True, check=True
+    ).stdout
+    return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+
+
+def log(cfg, msg):
+    with open(cfg["JARVIS_LOG"], "a") as f:
+        f.write(f"{time.strftime('%H:%M:%S')} listen: {msg}\n")
+
+
+def set_state(cfg, name):
+    p = cfg["JARVIS_STATE"]
+    with open(p + ".tmp", "w") as f:
+        f.write(name + "\n")
+    os.replace(p + ".tmp", p)
+
+
+def read(path, default=""):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return default
+
+
+def main():
+    cfg = env()
+    import openwakeword
+    from openwakeword.model import Model
+    import numpy as np
+
+    # openwakeword 0.4 bundles its pretrained models; newer releases download them on demand.
+    models_dir = os.path.join(os.path.dirname(openwakeword.__file__), "resources", "models")
+    model_path = next((os.path.join(models_dir, f) for f in sorted(os.listdir(models_dir))
+                       if f.startswith("hey_jarvis") and f.endswith(".onnx")), None)
+    if model_path is None and hasattr(openwakeword, "utils") and hasattr(openwakeword.utils, "download_models"):
+        openwakeword.utils.download_models(["hey_jarvis"])
+        model_path = next((os.path.join(models_dir, f) for f in sorted(os.listdir(models_dir))
+                           if f.startswith("hey_jarvis") and f.endswith(".onnx")), None)
+    if model_path is None:
+        sys.exit("hey_jarvis model not found in " + models_dir)
+    if "--download-models" in sys.argv:
+        print("hey_jarvis model ready:", model_path)
+        return
+
+    model = Model(wakeword_model_paths=[model_path])
+    key = next(iter(model.predict(np.zeros(FRAME, dtype=np.int16))))  # model's own label, e.g. "hey_jarvis_v0.1"
+    threshold = float(cfg.get("JARVIS_WAKE_THRESHOLD", "0.5"))
+    cooldown = float(cfg.get("JARVIS_WAKE_COOLDOWN", "3"))
+    action = cfg.get("JARVIS_WAKE_ACTION", "dictate")
+    vox_state = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "voxtype", "state")
+    muted_flag = os.path.join(cfg["JARVIS_CONFIG_DIR"], "muted")
+
+    rec = subprocess.Popen(
+        ["pw-record", "--rate", "16000", "--channels", "1", "--format", "s16", "-"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )
+    log(cfg, f"started (threshold {threshold}, action {action})")
+    if read(cfg["JARVIS_STATE"], "idle") in ("off", ""):
+        set_state(cfg, "muted" if os.path.exists(muted_flag) else "idle")
+
+    last_wake = 0.0
+    try:
+        while True:
+            buf = rec.stdout.read(FRAME * 2)
+            if len(buf) < FRAME * 2:
+                log(cfg, "pw-record ended")
+                sys.exit(1)  # systemd restarts us
+            # While Voxtype is already recording, the next words are dictation, not a wake.
+            if read(vox_state) == "recording":
+                model.reset()
+                continue
+            score = model.predict(np.frombuffer(buf, dtype=np.int16))[key]
+            now = time.time()
+            if score >= threshold and now - last_wake > cooldown:
+                last_wake = now
+                log(cfg, f"wake ({score:.2f})")
+                model.reset()
+                subprocess.Popen([os.path.join(BIN, "jarvis"), "dictate" if action == "dictate" else "hush"])
+    finally:
+        rec.terminate()
+        set_state(cfg, "muted" if os.path.exists(muted_flag) else "idle")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,57 @@
+#!/bin/bash
+# Shared environment for Jarvis scripts. Sourced, not executed.
+
+: "${JARVIS_HOME:=${JARVIS_HOME:-$HOME/.local/share/jarvis}}"
+: "${JARVIS_CONFIG_DIR:=${JARVIS_CONFIG_DIR:-$HOME/.config/jarvis}}"
+: "${JARVIS_CACHE:=${JARVIS_CACHE:-${XDG_RUNTIME_DIR:-/tmp}/jarvis-$UID}}"
+: "${JARVIS_VENV:=$JARVIS_HOME/venv}"
+: "${JARVIS_VOICES:=$JARVIS_HOME/voices}"
+: "${JARVIS_LOG:=$JARVIS_CACHE/jarvis.log}"
+
+# ---- defaults (precedence: config.sh > environment > these) ----
+: "${JARVIS_ENGINE:=auto}"                       # auto | edge | piper | espeak
+: "${JARVIS_EDGE_VOICE:=en-GB-RyanNeural}"       # `edge-tts --list-voices` for more
+: "${JARVIS_EDGE_RATE:=+5%}"
+: "${JARVIS_PIPER_VOICE:=en_GB-alan-medium}"     # https://rhasspy.github.io/piper-samples/
+: "${JARVIS_PIPER_LENGTH:=1.0}"                  # <1 faster, >1 slower
+: "${JARVIS_EDGE_TIMEOUT:=8}"                      # seconds before falling back to Piper
+: "${JARVIS_SUMMARY:=haiku}"                     # haiku | heuristic | full
+: "${JARVIS_SUMMARY_MODEL:=haiku}"
+: "${JARVIS_SHORT_MSG_CHARS:=220}"                 # replies shorter than this are read as-is
+: "${JARVIS_NARRATE:=1}"                           # narrate tool use
+: "${JARVIS_NARRATE_TOOLS:=Bash Edit Write MultiEdit NotebookEdit Agent WebFetch WebSearch}"
+: "${JARVIS_NARRATE_COOLDOWN:=4}"                  # seconds; drop repeats of the same line
+: "${JARVIS_GREET:=1}"                             # greet on session startup
+: "${JARVIS_IDLE_ALERT:=1}"                        # speak on idle_prompt notifications
+: "${JARVIS_ADDRESS:=sir}"                       # how Jarvis addresses you
+: "${JARVIS_PLAYER:=}"                           # auto-detect: mpv | ffplay | pw-play | paplay
+
+: "${JARVIS_WAKE:=1}"                           # "Hey Jarvis" wake word (jarvis listen enable)
+: "${JARVIS_WAKE_THRESHOLD:=0.5}"               # 0..1; lower = more sensitive, more false wakes
+: "${JARVIS_WAKE_COOLDOWN:=3}"                  # seconds to ignore repeat wakes
+: "${JARVIS_WAKE_CHIME:=1}"                     # play a short chime on wake
+: "${JARVIS_WAKE_ACTION:=dictate}"              # dictate | hush  (what "Hey Jarvis" does)
+: "${JARVIS_DICTATE_CMD:=voxtype record toggle}" # started after hush by `jarvis dictate`
+
+: "${JARVIS_VIZ:=1}"                            # on-screen visualizer while speaking (needs quickshell)
+: "${JARVIS_VIZ_ACCENT:=}"                      # defaults come from the active Omarchy theme
+: "${JARVIS_VIZ_GLOW:=}"
+: "${JARVIS_VIZ_FG:=}"
+: "${JARVIS_VIZ_BG:=}"
+: "${JARVIS_VIZ_FONT:=}"
+
+[ -f "$JARVIS_CONFIG_DIR/config.sh" ] && . "$JARVIS_CONFIG_DIR/config.sh"
+
+mkdir -p "$JARVIS_CACHE"
+
+# Runtime files shared with `jarvis hush`, the wake daemon and the Omarchy bar widget.
+JARVIS_STATE="$JARVIS_CACHE/state"          # idle | speaking | listening | muted | off
+JARVIS_PLAYER_PID="$JARVIS_CACHE/player.pid"
+JARVIS_HUSH_EPOCH="$JARVIS_CACHE/hush-epoch" # bumped by hush; queued speech from before it is dropped
+
+jarvis_log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" >> "$JARVIS_LOG"; }
+jarvis_muted() { [ -f "$JARVIS_CONFIG_DIR/muted" ]; }
+jarvis_state() { # jarvis_state <name>  — atomic write so the bar widget never reads a torn file
+  printf '%s\n' "$1" > "$JARVIS_STATE.tmp" && mv -f "$JARVIS_STATE.tmp" "$JARVIS_STATE"
+}
+jarvis_epoch() { cat "$JARVIS_HUSH_EPOCH" 2>/dev/null || echo 0; }
