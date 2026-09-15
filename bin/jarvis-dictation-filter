@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""jarvis-dictation-filter — Voxtype post_process hook for spoken start/stop commands.
+
+Dictation is opened with "Hey Jarvis" and closed with "Hey Jarvis, stop" (the
+listen daemon ends the recording when it hears the wake word mid-dictation).
+Whisper transcribes those command words along with the text, so this filter
+strips them: a leading "start listening" / "listen", and a trailing
+"hey Jarvis[, stop|pause|that's all]". A transcript that is nothing but one of
+whisper's silence hallucinations ("Thanks for watching!", "you", "v") is dropped
+so a false wake types nothing. Everything else passes through untouched.
+
+Wire it up in ~/.config/voxtype/config.toml:
+
+    [output.post_process]
+    command = "/path/to/jarvis-dictation-filter"
+    fallback_on_empty = false   # a bare "Hey Jarvis, stop" types nothing
+    timeout_ms = 3000
+
+Override the word lists with JARVIS_START_WORDS / JARVIS_STOP_WORDS in
+~/.config/jarvis/config.sh (regex alternations, case-insensitive).
+"""
+import os
+import re
+import subprocess
+import sys
+
+BIN = os.path.dirname(os.path.realpath(__file__))
+
+# Whisper's usual renderings of the wake phrase, including the mis-hearings
+# already mapped in the Voxtype replacements (HRV, HR is ...).
+WAKE = r"(?:hey|hi|hay|okay|ok)?[,\s]*(?:jarvis|jarvus|travis|harvest|hrv|hr\s+is|jarv)"
+START_WORDS = r"start\s+listening|listen(?:ing)?|start\s+dictation|dictate"
+STOP_WORDS = r"stop(?:\s+(?:listening|dictation|recording))?|pause(?:\s+listening)?|that'?s\s+all|that'?s\s+it|end(?:\s+dictation)?|over"
+# Safe to strip even without the wake phrase in front (whisper sometimes drops it).
+BARE_STOP = r"(?:stop|pause|end)\s+(?:listening|dictation|recording)"
+# What whisper invents from (near-)silence — a false wake followed by nothing. Dropped when it is the whole text.
+HALLUCINATIONS = r"thanks?\s+(?:you\s+)?(?:for\s+watching|for\s+listening)|thank\s+you|you|v|bye|the\s+end|so|um+|uh+|subtitles\s+by.*|\W*"
+
+
+def cfg(name, default):
+    """Read one JARVIS_* value through jarvis-env so config.sh precedence matches the shell scripts."""
+    try:
+        out = subprocess.run(
+            ["bash", "-c", f'. "{BIN}/jarvis-env"; printf %s "${{{name}}}"'],
+            capture_output=True, text=True, timeout=2, check=True,
+        ).stdout
+        return out or default
+    except (subprocess.SubprocessError, OSError):
+        return default
+
+
+def strip(text, start_words, stop_words):
+    punct = r"[,.!?;:\s]*"
+    # Leading: an optional wake phrase (if the recording caught the tail of it) then a start word.
+    text = re.sub(rf"^{punct}(?:{WAKE}{punct})?(?:{start_words}){punct}", "", text, count=1, flags=re.I)
+    # Trailing: wake phrase + optional stop word (+ a cut-off fragment), or an unambiguous bare stop phrase.
+    tail = rf"(?:{WAKE}{punct}(?:{stop_words})?(?:{punct}\w{{0,3}})?|{BARE_STOP}){punct}$"
+    text = re.sub(tail, "", text, count=1, flags=re.I)
+    # Sentence-ending punctuation stays; a dangling comma from before the command does not.
+    text = re.sub(r"[,;:\s]+$", "", text).strip()
+    if re.fullmatch(rf"(?:{HALLUCINATIONS}){punct}", text, flags=re.I):
+        return ""
+    return text
+
+
+def main():
+    text = sys.stdin.read()
+    out = strip(text, cfg("JARVIS_START_WORDS", START_WORDS), cfg("JARVIS_STOP_WORDS", STOP_WORDS))
+    sys.stdout.write(out)
+
+
+if __name__ == "__main__":
+    main()

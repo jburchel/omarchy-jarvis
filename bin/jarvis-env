@@ -32,6 +32,10 @@
 : "${JARVIS_WAKE_CHIME:=1}"                     # play a short chime on wake
 : "${JARVIS_WAKE_ACTION:=dictate}"              # dictate | hush  (what "Hey Jarvis" does)
 : "${JARVIS_DICTATE_CMD:=voxtype record toggle}" # started after hush by `jarvis dictate`
+: "${JARVIS_DICTATE_STOP_CMD:=voxtype record stop}" # run by "Hey Jarvis, stop" mid-dictation
+: "${JARVIS_STOP_GRACE:=1}"                     # seconds after the stop wake before the recording ends
+: "${JARVIS_START_WORDS:=}"                     # regex; words stripped from the start of a dictation (default in jarvis-dictation-filter)
+: "${JARVIS_STOP_WORDS:=}"                      # regex; words stripped after the trailing "Hey Jarvis"
 
 : "${JARVIS_VIZ:=1}"                            # on-screen visualizer while speaking (needs quickshell)
 : "${JARVIS_VIZ_ACCENT:=}"                      # defaults come from the active Omarchy theme

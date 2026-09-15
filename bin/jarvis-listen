@@ -5,6 +5,12 @@ Reads 16 kHz mono PCM from `pw-record`, runs openWakeWord's pretrained
 `hey_jarvis` model on 80 ms frames, and on detection runs `jarvis dictate`
 (hush → chime → start dictation) or `jarvis hush`, per JARVIS_WAKE_ACTION.
 
+While Voxtype is recording, the daemon keeps listening: a second "Hey Jarvis"
+("Hey Jarvis, stop") ends the dictation via `jarvis dictate stop`, after a short
+grace period so the stop word lands in the recording and
+`jarvis-dictation-filter` can strip it. Between dictations everything said is
+ignored — only the wake word is acted on.
+
 Run under systemd via `jarvis listen enable`; `--download-models` fetches the
 model files once. Agent-agnostic: dictation lands in whatever window is focused.
 """
@@ -69,6 +75,7 @@ def main():
     key = next(iter(model.predict(np.zeros(FRAME, dtype=np.int16))))  # model's own label, e.g. "hey_jarvis_v0.1"
     threshold = float(cfg.get("JARVIS_WAKE_THRESHOLD", "0.5"))
     cooldown = float(cfg.get("JARVIS_WAKE_COOLDOWN", "3"))
+    stop_grace = float(cfg.get("JARVIS_STOP_GRACE", "1"))
     action = cfg.get("JARVIS_WAKE_ACTION", "dictate")
     vox_state = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "voxtype", "state")
     muted_flag = os.path.join(cfg["JARVIS_CONFIG_DIR"], "muted")
@@ -88,17 +95,19 @@ def main():
             if len(buf) < FRAME * 2:
                 log(cfg, "pw-record ended")
                 sys.exit(1)  # systemd restarts us
-            # While Voxtype is already recording, the next words are dictation, not a wake.
-            if read(vox_state) == "recording":
-                model.reset()
-                continue
             score = model.predict(np.frombuffer(buf, dtype=np.int16))[key]
             now = time.time()
             if score >= threshold and now - last_wake > cooldown:
                 last_wake = now
-                log(cfg, f"wake ({score:.2f})")
                 model.reset()
-                subprocess.Popen([os.path.join(BIN, "jarvis"), "dictate" if action == "dictate" else "hush"])
+                if read(vox_state) == "recording":
+                    # "Hey Jarvis, stop" mid-dictation: let the stop word finish, then end the recording.
+                    log(cfg, f"stop wake ({score:.2f})")
+                    time.sleep(stop_grace)
+                    subprocess.Popen([os.path.join(BIN, "jarvis"), "dictate", "stop"])
+                else:
+                    log(cfg, f"wake ({score:.2f})")
+                    subprocess.Popen([os.path.join(BIN, "jarvis"), "dictate" if action == "dictate" else "hush"])
     finally:
         rec.terminate()
         set_state(cfg, "muted" if os.path.exists(muted_flag) else "idle")

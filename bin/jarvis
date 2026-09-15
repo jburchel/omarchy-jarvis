@@ -9,7 +9,7 @@
 #   voice <name>     set the Edge voice (en-GB-RyanNeural, en-US-GuyNeural ...)
 #   piper-voice <n>  download and set a Piper voice (en_GB-alan-medium ...)
 #   hush             stop speaking now and drop anything queued
-#   dictate          hush, then start dictation (JARVIS_DICTATE_CMD)
+#   dictate [stop]   hush, then toggle dictation (JARVIS_DICTATE_CMD); "stop" ends it (JARVIS_DICTATE_STOP_CMD)
 #   listen <cmd>     wake word: enable | disable | start | stop | status | run
 #   state            print the current state (idle | speaking | listening | muted | off)
 #   pronounce <word> <how>   teach a pronunciation ("plugin" "plug-in"); no args lists them
@@ -74,9 +74,15 @@ unmute) rm -f "$JARVIS_CONFIG_DIR/muted"; jarvis_state idle; echo "Jarvis unmute
 toggle-mute) if jarvis_muted; then "$0" unmute; else "$0" mute; fi ;;
 hush)   hush ;;
 dictate)
+  vstate="$(cat "${XDG_RUNTIME_DIR:-/tmp}/voxtype/state" 2>/dev/null)"
+  if [ "$2" = stop ]; then
+    # Spoken "Hey Jarvis, stop": end the recording (no-op if none) and hand the text to Voxtype.
+    [ "$vstate" = recording ] && $JARVIS_DICTATE_STOP_CMD
+    jarvis_muted && jarvis_state muted || jarvis_state idle
+    jarvis_log "dictate stop"; exit 0
+  fi
   hush
   # Only chime when we are *starting* a recording, not stopping one.
-  vstate="$(cat "${XDG_RUNTIME_DIR:-/tmp}/voxtype/state" 2>/dev/null)"
   if [ "$vstate" != recording ] && [ "$JARVIS_WAKE_CHIME" = 1 ] && [ -f "$JARVIS_HOME/chime.wav" ]; then
     (mpv --no-video --really-quiet --no-terminal "$JARVIS_HOME/chime.wav" 2>/dev/null || pw-play "$JARVIS_HOME/chime.wav" 2>/dev/null) &
   fi
@@ -134,6 +140,7 @@ status)
   echo "greet/idle:   $JARVIS_GREET / $JARVIS_IDLE_ALERT"
   echo "state:        $(cat "$JARVIS_STATE" 2>/dev/null || echo idle)"
   echo "wake word:    $(systemctl --user is-active jarvis-listen.service 2>/dev/null || echo inactive) (threshold $JARVIS_WAKE_THRESHOLD, action $JARVIS_WAKE_ACTION)"
+  echo "stop phrase:  $(grep -q jarvis-dictation-filter "${XDG_CONFIG_HOME:-$HOME/.config}/voxtype/config.toml" 2>/dev/null && echo "ok (\"Hey Jarvis, stop\")" || echo "filter not in voxtype config — see README")"
   echo "config:       $JARVIS_CONFIG_DIR/config.sh"
   echo "log:          $JARVIS_LOG" ;;
 voices)
