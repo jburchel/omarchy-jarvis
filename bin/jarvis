@@ -1,6 +1,6 @@
 #!/bin/bash
 # jarvis <command>  — setup and control for the Jarvis voice plugin
-#   setup            install venv, edge-tts, piper, default voice, config
+#   setup            install venv + pinned deps (requirements.txt), default voice, config
 #   test [engine]    speak a test line (engine: edge | piper | espeak)
 #   say "text"       speak arbitrary text
 #   mute | unmute    silence / restore all speech
@@ -14,8 +14,39 @@
 #   state            print the current state (idle | speaking | listening | muted | off)
 #   pronounce <word> <how>   teach a pronunciation ("plugin" "plug-in"); no args lists them
 #   log              tail the log
+#   lock             (maintainer) regenerate requirements.txt from requirements.in
 BIN="$(dirname "$(readlink -f "$0")")"
+ROOT="$(dirname "$BIN")"
 . "$BIN/jarvis-env"
+
+install_deps() {
+  # The whole Python dependency set, exact versions with hashes (requirements.txt, built from
+  # requirements.in by `jarvis lock`). pip refuses anything unlisted, unhashed, or source-only.
+  "$JARVIS_VENV/bin/pip" install -q --require-hashes --only-binary :all: -r "$ROOT/requirements.txt"
+}
+
+verify_file() { # verify_file PATH — check a downloaded artifact against models.sha256, else against the
+  # first-seen checksum in ~/.config/jarvis/voices.sha256 (recorded on first download). 0 ok, 1 mismatch.
+  local dir name sum pinned; dir="$(dirname "$1")"; name="$(basename "$1")"
+  local user_sums="$JARVIS_CONFIG_DIR/voices.sha256"
+  sum="$(sha256sum "$1" | cut -d' ' -f1)"
+  pinned="$(grep -h " $name\$" "$ROOT/models.sha256" "$user_sums" 2>/dev/null | head -1 | cut -d' ' -f1)"
+  if [ -z "$pinned" ]; then
+    mkdir -p "$JARVIS_CONFIG_DIR"; echo "$sum  $name" >> "$user_sums"
+    echo "note: $name is not pinned in models.sha256; recorded sha256 $sum in $user_sums"
+  elif [ "$sum" != "$pinned" ]; then
+    echo "CHECKSUM MISMATCH for $1 (expected $pinned, got $sum) — removed" >&2
+    rm -f "$1"; return 1
+  fi
+}
+
+fetch_piper_voice() { # fetch_piper_voice NAME — download a Piper voice (model + config) and verify both files
+  mkdir -p "$JARVIS_VOICES"
+  if [ ! -f "$JARVIS_VOICES/$1.onnx" ] || [ ! -f "$JARVIS_VOICES/$1.onnx.json" ]; then
+    (cd "$JARVIS_VOICES" && "$JARVIS_VENV/bin/python" -m piper.download_voices "$1") || return 1
+  fi
+  verify_file "$JARVIS_VOICES/$1.onnx" && verify_file "$JARVIS_VOICES/$1.onnx.json"
+}
 
 hush() {
   # Bump the epoch first so anything waiting on the play lock exits instead of speaking.
@@ -41,10 +72,8 @@ case "${1:-status}" in
 setup)
   mkdir -p "$JARVIS_HOME" "$JARVIS_VOICES" "$JARVIS_CONFIG_DIR"
   [ -x "$JARVIS_VENV/bin/python" ] || python3 -m venv "$JARVIS_VENV"
-  "$JARVIS_VENV/bin/pip" install -q --upgrade pip edge-tts piper-tts
-  if [ ! -f "$JARVIS_VOICES/$JARVIS_PIPER_VOICE.onnx" ]; then
-    (cd "$JARVIS_VOICES" && "$JARVIS_VENV/bin/python" -m piper.download_voices "$JARVIS_PIPER_VOICE")
-  fi
+  install_deps || { echo "dependency install failed (see requirements.txt)"; exit 1; }
+  fetch_piper_voice "$JARVIS_PIPER_VOICE" || exit 1
   if [ ! -f "$JARVIS_CONFIG_DIR/config.sh" ]; then
     sed -n '/^# ---- defaults/,/^\[ -f/p' "$BIN/jarvis-env" | grep -E '^: "\$\{JARVIS_' | sed -E 's/^: "\$\{([A-Z_]+):=([^}]*)\}"/# \1="\2"/' > "$JARVIS_CONFIG_DIR/config.sh"
     sed -i '1i # Jarvis config — uncomment and edit any line to override the default.\n' "$JARVIS_CONFIG_DIR/config.sh"
@@ -107,8 +136,8 @@ listen)
     stop)   systemctl --user stop jarvis-listen.service; echo "wake word stopped" ;;
     enable)
       [ -x "$JARVIS_VENV/bin/python" ] || { echo "run 'jarvis setup' first"; exit 1; }
-      "$JARVIS_VENV/bin/python" -c 'import openwakeword' 2>/dev/null || "$JARVIS_VENV/bin/pip" install -q openwakeword
-      "$JARVIS_VENV/bin/python" "$BIN/jarvis-listen" --download-models
+      "$JARVIS_VENV/bin/python" -c 'import openwakeword' 2>/dev/null || { echo "openwakeword missing — run 'jarvis setup' again"; exit 1; }
+      "$JARVIS_VENV/bin/python" "$BIN/jarvis-listen" --check || exit 1
       mkdir -p "$(dirname "$(unit_file)")"
       cat > "$(unit_file)" <<EOF
 [Unit]
@@ -152,8 +181,11 @@ voices)
   echo "Full list: $JARVIS_VENV/bin/edge-tts --list-voices" ;;
 voice) set_cfg JARVIS_EDGE_VOICE "$2"; echo "Edge voice set to $2"; JARVIS_EDGE_VOICE="$2" "$BIN/jarvis-say" --engine edge "This is $2, $JARVIS_ADDRESS." ;;
 piper-voice)
-  (cd "$JARVIS_VOICES" && "$JARVIS_VENV/bin/python" -m piper.download_voices "$2") && set_cfg JARVIS_PIPER_VOICE "$2" \
+  fetch_piper_voice "$2" && set_cfg JARVIS_PIPER_VOICE "$2" \
   && JARVIS_PIPER_VOICE="$2" "$BIN/jarvis-say" --engine piper "This is $2, $JARVIS_ADDRESS." ;;
 log) tail -n "${2:-30}" "$JARVIS_LOG" 2>/dev/null || echo "no log yet" ;;
+lock) # maintainer: regenerate requirements.txt (all platforms, hashed) from requirements.in; needs uv
+  uv pip compile --universal --generate-hashes --only-binary :all: --python-version 3.11 --no-header \
+    -o "$ROOT/requirements.txt" "$ROOT/requirements.in" && echo "requirements.txt updated" ;;
 *) sed -n '2,13p' "$0"; exit 1 ;;
 esac

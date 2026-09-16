@@ -1,0 +1,8 @@
+# Model artifacts Jarvis downloads at setup, pinned by sha256 (`sha256sum -c` format).
+# The wake-word models (hey_jarvis, melspectrogram, embedding, silero_vad) ship inside the
+# openwakeword wheel, which requirements.txt pins by hash, so they need no entry here.
+# Piper voices come from https://huggingface.co/rhasspy/piper-voices; `jarvis piper-voice <name>`
+# checks a voice against this file, or records its first-seen checksum in
+# ~/.config/jarvis/voices.sha256 and checks later downloads against that.
+0a309668932205e762801f1efc2736cd4b0120329622adf62be09e56339d3330  en_GB-alan-medium.onnx
+c0f0d124e5895c00e7c03b35dcc8287f319a6998a365b182deb5c8e752ee8c1e  en_GB-alan-medium.onnx.json

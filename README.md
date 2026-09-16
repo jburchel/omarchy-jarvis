@@ -31,9 +31,13 @@ omarchy plugin add https://github.com/jburchel/omarchy-jarvis --enable
 ln -s ~/.config/omarchy/plugins/io.github.jburchel.jarvis/bin/jarvis ~/.local/bin/jarvis
 ```
 
-`setup` creates a Python venv at `~/.local/share/jarvis/venv` with `edge-tts` and `piper-tts`,
-downloads the `en_GB-alan-medium` Piper voice (~60 MB), writes `~/.config/jarvis/config.sh`,
-and generates a chime. It does not touch any other config.
+`setup` creates a Python venv at `~/.local/share/jarvis/venv` and installs `edge-tts`, `piper-tts`
+and `openwakeword` from `requirements.txt` — every package (transitive ones included) at an exact
+version with a verified hash (`pip --require-hashes --only-binary :all:`), so nothing unreviewed can
+slip in later. It then downloads the `en_GB-alan-medium` Piper voice (~60 MB) and checks it against
+`models.sha256`; the wake-word models ship inside the hash-pinned `openwakeword` wheel and are never
+fetched at runtime. Finally it writes `~/.config/jarvis/config.sh` and generates a chime. It does
+not touch any other config. Re-run `setup` after updating the plugin to pick up new pins.
 
 Then, optionally:
 
@@ -87,7 +91,7 @@ o.bind("code:108", "Toggle dictation", "jarvis dictate")
 | `jarvis listen enable\|disable\|start\|stop\|status` | wake-word service |
 | `jarvis pronounce plugin "plug-in"` | teach a pronunciation; no args lists them |
 | `jarvis voice en-GB-ThomasNeural` | change the Edge voice (`jarvis voices` to list) |
-| `jarvis piper-voice en_US-ryan-high` | download + set the offline voice |
+| `jarvis piper-voice en_US-ryan-high` | download + set the offline voice (checksum-pinned in `models.sha256`, or recorded on first download) |
 | `jarvis test [edge\|piper\|espeak]` | hear a line |
 | `jarvis status` / `jarvis log` | health / recent errors |
 

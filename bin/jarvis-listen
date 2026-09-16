@@ -15,8 +15,8 @@ the stop word lands in the recording and `jarvis-dictation-filter` can strip it.
 Recordings started by the dictation key are left to the key (and the stop word).
 JARVIS_SILENCE_SECS=0 turns the silence stop off.
 
-Run under systemd via `jarvis listen enable`; `--download-models` fetches the
-model files once. Agent-agnostic: dictation lands in whatever window is focused.
+Run under systemd via `jarvis listen enable`; `--check` just confirms the
+bundled model files are present. Agent-agnostic: dictation lands in whatever window is focused.
 """
 import os
 import subprocess
@@ -67,17 +67,14 @@ def main():
     from openwakeword.vad import VAD
     import numpy as np
 
-    # openwakeword 0.4 bundles its pretrained models; newer releases download them on demand.
+    # The models ship inside the openwakeword wheel that requirements.txt pins by hash; nothing is
+    # fetched at runtime. (Newer openwakeword releases download models on demand — deliberately unused.)
     models_dir = os.path.join(os.path.dirname(openwakeword.__file__), "resources", "models")
     model_path = next((os.path.join(models_dir, f) for f in sorted(os.listdir(models_dir))
                        if f.startswith("hey_jarvis") and f.endswith(".onnx")), None)
-    if model_path is None and hasattr(openwakeword, "utils") and hasattr(openwakeword.utils, "download_models"):
-        openwakeword.utils.download_models(["hey_jarvis"])
-        model_path = next((os.path.join(models_dir, f) for f in sorted(os.listdir(models_dir))
-                           if f.startswith("hey_jarvis") and f.endswith(".onnx")), None)
     if model_path is None:
-        sys.exit("hey_jarvis model not found in " + models_dir)
-    if "--download-models" in sys.argv:
+        sys.exit("hey_jarvis model not found in " + models_dir + " — run 'jarvis setup'")
+    if "--check" in sys.argv:
         print("hey_jarvis model ready:", model_path)
         return
 

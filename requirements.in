@@ -1,0 +1,4 @@
+# Direct dependencies; `jarvis lock` regenerates requirements.txt (pinned + hashed) from this.
+edge-tts==7.2.8
+piper-tts==1.8.0
+openwakeword==0.4.0
