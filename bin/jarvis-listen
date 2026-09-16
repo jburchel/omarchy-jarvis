@@ -88,9 +88,9 @@ def main():
     cooldown = float(cfg.get("JARVIS_WAKE_COOLDOWN", "3"))
     stop_grace = float(cfg.get("JARVIS_STOP_GRACE", "1"))
     action = cfg.get("JARVIS_WAKE_ACTION", "dictate")
-    silence_secs = float(cfg.get("JARVIS_SILENCE_SECS", "1.8"))
+    silence_secs = float(cfg.get("JARVIS_SILENCE_SECS", "10"))
     vad_threshold = float(cfg.get("JARVIS_VAD_THRESHOLD", "0.5"))
-    max_wait = float(cfg.get("JARVIS_MAX_WAIT_SECS", "6"))
+    max_wait = float(cfg.get("JARVIS_MAX_WAIT_SECS", "15"))
     # Consecutive speech frames before the recording counts as spoken: rejects the chime, clicks, coughs.
     min_speech_frames = max(1, round(float(cfg.get("JARVIS_SPEECH_MIN_SECS", "0.3")) / FRAME_SECS))
     vox_state = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "voxtype", "state")
