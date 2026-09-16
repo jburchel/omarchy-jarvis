@@ -56,7 +56,7 @@ fallback_on_empty = false   # a dictation that was only the command types nothin
 ```
 
 A dictation the wake word started ends on its own: once you have spoken, `JARVIS_SILENCE_SECS`
-(default 10 — room to think mid-sentence) of quiet stops it, and if nothing is said within `JARVIS_MAX_WAIT_SECS` (default 15)
+(default 5 — room to think mid-sentence) of quiet stops it, and if nothing is said within `JARVIS_MAX_WAIT_SECS` (default 15)
 it is cancelled. Voxtype has its own cap, `max_duration_secs` in its config (120 by default) — raise it if you talk at length. `JARVIS_SILENCE_SECS=0` leaves it to the stop word and the key. Dictations started
 from the key are yours to end (key or stop word). Between dictations the daemon ignores everything
 but the wake word. The filter also drops whisper's silence hallucinations ("Thanks for watching!",
