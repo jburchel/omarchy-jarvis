@@ -6,7 +6,8 @@ A voice for whatever AI agent you're running in the terminal — with a way to s
 - **Interrupts**: `jarvis hush` stops playback and drops the queue. Bound to a key, and to your
   dictation toggle so starting to talk silences it.
 - **"Hey Jarvis"** wake word (openWakeWord, ~3% CPU): hush → chime → start dictation, hands-free.
-  **"Hey Jarvis, stop"** ends it — the command words never reach the typed text.
+  It ends by itself after ~1.8 s of silence (Voxtype then types the text and, with `auto_submit`,
+  presses Enter); **"Hey Jarvis, stop"** ends it early — the command words never reach the typed text.
 - **Bar widget**: idle / speaking / listening / muted at a glance. Click to mute, right-click to
   hush, middle-click to toggle the wake word.
 - **Pronunciation dictionary** so it says "plug-in", not "pluggin".
@@ -50,8 +51,12 @@ timeout_ms = 3000
 fallback_on_empty = false   # a dictation that was only the command types nothing
 ```
 
-Between dictations the daemon ignores everything but the wake word. The filter also drops
-whisper's silence hallucinations ("Thanks for watching!", "you"), so a false wake types nothing.
+A dictation the wake word started ends on its own: once you have spoken, `JARVIS_SILENCE_SECS`
+(default 1.8) of quiet stops it, and if nothing is said within `JARVIS_MAX_WAIT_SECS` (default 6)
+it is cancelled. `JARVIS_SILENCE_SECS=0` leaves it to the stop word and the key. Dictations started
+from the key are yours to end (key or stop word). Between dictations the daemon ignores everything
+but the wake word. The filter also drops whisper's silence hallucinations ("Thanks for watching!",
+"you"), so a false wake types nothing.
 Word lists: `JARVIS_START_WORDS` / `JARVIS_STOP_WORDS` (regex) in `config.sh`;
 `JARVIS_STOP_GRACE` is how long after the stop wake the recording runs on (default 1 s).
 
@@ -78,7 +83,7 @@ o.bind("code:108", "Toggle dictation", "jarvis dictate")
 | `jarvis hush` | stop now, drop the queue |
 | `jarvis mute` / `unmute` / `toggle-mute` | silence until told otherwise |
 | `jarvis dictate` | hush, chime, run `JARVIS_DICTATE_CMD` (default `voxtype record toggle`) |
-| `jarvis dictate stop` | end the recording (`JARVIS_DICTATE_STOP_CMD`) — what "Hey Jarvis, stop" runs |
+| `jarvis dictate stop` / `cancel` | end the recording and type it (`JARVIS_DICTATE_STOP_CMD`) — what the silence stop and "Hey Jarvis, stop" run — or drop it |
 | `jarvis listen enable\|disable\|start\|stop\|status` | wake-word service |
 | `jarvis pronounce plugin "plug-in"` | teach a pronunciation; no args lists them |
 | `jarvis voice en-GB-ThomasNeural` | change the Edge voice (`jarvis voices` to list) |
@@ -129,8 +134,8 @@ outside those paths and `$XDG_RUNTIME_DIR/jarvis-$UID/` (cleared on reboot).
 - Edge TTS sends the *text to be spoken* to Microsoft's servers. Set `JARVIS_ENGINE="piper"`
   for fully offline speech.
 - The wake-word daemon processes microphone audio **locally only** (openWakeWord, ONNX on CPU).
-  Nothing is recorded or sent anywhere. While Voxtype is recording, the only thing the daemon
-  acts on is a second "Hey Jarvis" (the stop).
+  Nothing is recorded or sent anywhere. While Voxtype is recording, the daemon only measures
+  whether you are still talking (Silero VAD, also local) and listens for a second "Hey Jarvis".
 - Dictation itself is Voxtype's — whisper.cpp, local.
 
 ## License

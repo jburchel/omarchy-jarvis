@@ -9,7 +9,7 @@
 #   voice <name>     set the Edge voice (en-GB-RyanNeural, en-US-GuyNeural ...)
 #   piper-voice <n>  download and set a Piper voice (en_GB-alan-medium ...)
 #   hush             stop speaking now and drop anything queued
-#   dictate [stop]   hush, then toggle dictation (JARVIS_DICTATE_CMD); "stop" ends it (JARVIS_DICTATE_STOP_CMD)
+#   dictate [stop|cancel]  hush, then toggle dictation (JARVIS_DICTATE_CMD); "stop" ends it, "cancel" drops it
 #   listen <cmd>     wake word: enable | disable | start | stop | status | run
 #   state            print the current state (idle | speaking | listening | muted | off)
 #   pronounce <word> <how>   teach a pronunciation ("plugin" "plug-in"); no args lists them
@@ -75,11 +75,14 @@ toggle-mute) if jarvis_muted; then "$0" unmute; else "$0" mute; fi ;;
 hush)   hush ;;
 dictate)
   vstate="$(cat "${XDG_RUNTIME_DIR:-/tmp}/voxtype/state" 2>/dev/null)"
-  if [ "$2" = stop ]; then
-    # Spoken "Hey Jarvis, stop": end the recording (no-op if none) and hand the text to Voxtype.
-    [ "$vstate" = recording ] && $JARVIS_DICTATE_STOP_CMD
+  if [ "$2" = stop ] || [ "$2" = cancel ]; then
+    # Silence / spoken "Hey Jarvis, stop": end the recording (no-op if none) and hand the text to
+    # Voxtype. "cancel" (nothing said after the wake word) drops it instead.
+    if [ "$vstate" = recording ]; then
+      [ "$2" = stop ] && $JARVIS_DICTATE_STOP_CMD || $JARVIS_DICTATE_CANCEL_CMD
+    fi
     jarvis_muted && jarvis_state muted || jarvis_state idle
-    jarvis_log "dictate stop"; exit 0
+    jarvis_log "dictate $2"; exit 0
   fi
   hush
   # Only chime when we are *starting* a recording, not stopping one.

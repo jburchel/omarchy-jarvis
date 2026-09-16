@@ -32,8 +32,13 @@
 : "${JARVIS_WAKE_CHIME:=1}"                     # play a short chime on wake
 : "${JARVIS_WAKE_ACTION:=dictate}"              # dictate | hush  (what "Hey Jarvis" does)
 : "${JARVIS_DICTATE_CMD:=voxtype record toggle}" # started after hush by `jarvis dictate`
-: "${JARVIS_DICTATE_STOP_CMD:=voxtype record stop}" # run by "Hey Jarvis, stop" mid-dictation
+: "${JARVIS_DICTATE_STOP_CMD:=voxtype record stop}" # run by the silence stop and "Hey Jarvis, stop"
+: "${JARVIS_DICTATE_CANCEL_CMD:=voxtype record cancel}" # run when nothing was said after the wake word
 : "${JARVIS_STOP_GRACE:=1}"                     # seconds after the stop wake before the recording ends
+: "${JARVIS_SILENCE_SECS:=1.8}"                 # end a wake-word dictation after this much silence (0 = only the stop word / key)
+: "${JARVIS_VAD_THRESHOLD:=0.5}"                # Silero speech probability that counts as talking
+: "${JARVIS_SPEECH_MIN_SECS:=0.3}"              # continuous speech needed before silence can end the dictation (ignores the chime)
+: "${JARVIS_MAX_WAIT_SECS:=6}"                  # cancel the dictation if nothing is said this long after the wake word
 : "${JARVIS_START_WORDS:=}"                     # regex; words stripped from the start of a dictation (default in jarvis-dictation-filter)
 : "${JARVIS_STOP_WORDS:=}"                      # regex; words stripped after the trailing "Hey Jarvis"
 
