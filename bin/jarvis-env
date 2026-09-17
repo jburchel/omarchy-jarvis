@@ -35,7 +35,7 @@
 : "${JARVIS_DICTATE_STOP_CMD:=voxtype record stop}" # run by the silence stop and "Hey Jarvis, stop"
 : "${JARVIS_DICTATE_CANCEL_CMD:=voxtype record cancel}" # run when nothing was said after the wake word
 : "${JARVIS_STOP_GRACE:=1}"                     # seconds after the stop wake before the recording ends
-: "${JARVIS_SILENCE_SECS:=5}"                   # end a wake-word dictation after this much silence — long enough to stop and think (0 = only the stop word / key)
+: "${JARVIS_SILENCE_SECS:=1.5}"                 # end a wake-word dictation after this much silence (0 = only the stop word / key)
 : "${JARVIS_VAD_THRESHOLD:=0.5}"                # Silero speech probability that counts as talking
 : "${JARVIS_SPEECH_MIN_SECS:=0.3}"              # continuous speech needed before silence can end the dictation (ignores the chime)
 : "${JARVIS_MAX_WAIT_SECS:=15}"                 # cancel the dictation if nothing is said this long after the wake word
