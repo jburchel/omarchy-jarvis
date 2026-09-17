@@ -92,7 +92,7 @@ o.bind("code:108", "Toggle dictation", "jarvis dictate")
 | `jarvis listen enable\|disable\|start\|stop\|status` | wake-word service |
 | `jarvis pronounce plugin "plug-in"` | teach a pronunciation; no args lists them |
 | `jarvis voice en-GB-ThomasNeural` | change the Edge voice (`jarvis voices` to list) |
-| `jarvis piper-voice en_US-ryan-high` | download + set the offline voice (checksum-pinned in `models.sha256`, or recorded on first download) |
+| `jarvis piper-voice en_US-ryan-high` | download + set the offline voice — only names pinned in `models.sha256` (`jarvis voices` lists them); anything else is refused |
 | `jarvis test [edge\|piper\|espeak]` | hear a line |
 | `jarvis status` / `jarvis log` | health / recent errors |
 

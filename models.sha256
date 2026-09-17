@@ -1,8 +1,28 @@
 # Model artifacts Jarvis downloads at setup, pinned by sha256 (`sha256sum -c` format).
 # The wake-word models (hey_jarvis, melspectrogram, embedding, silero_vad) ship inside the
 # openwakeword wheel, which requirements.txt pins by hash, so they need no entry here.
-# Piper voices come from https://huggingface.co/rhasspy/piper-voices; `jarvis piper-voice <name>`
-# checks a voice against this file, or records its first-seen checksum in
-# ~/.config/jarvis/voices.sha256 and checks later downloads against that.
+# Piper voices come from https://huggingface.co/rhasspy/piper-voices. `jarvis piper-voice <name>`
+# only downloads a voice whose .onnx and .onnx.json are both listed below, and removes a download
+# whose digest differs. No other name is accepted; add a pin here (a reviewed commit) to allow one.
 0a309668932205e762801f1efc2736cd4b0120329622adf62be09e56339d3330  en_GB-alan-medium.onnx
 c0f0d124e5895c00e7c03b35dcc8287f319a6998a365b182deb5c8e752ee8c1e  en_GB-alan-medium.onnx.json
+401369c4a81d09fdd86c32c5c864440811dbdcc66466cde2d64f7133a66ad03b  en_GB-alba-medium.onnx
+aa965a2f02ecced632c2694e1fc72bbff6d65f265fab567ca945918c73dd89f4  en_GB-alba-medium.onnx.json
+9e74d089a8563f8b2446426d01becb046cd3c3bfbafe1a20fd03a9a79bd82619  en_GB-aru-medium.onnx
+00529fabf0e79f29a9cb10fda5b60f9b7cf80671faac2b316e13af20e7816d5e  en_GB-aru-medium.onnx.json
+470b4dd634c98f8a4850d7626ffc3dfc90774628eeef6605a6dd8f88f30a5903  en_GB-cori-high.onnx
+9e7fb5b5671612c22f3c81cbe46c1ae87b031a4632bcb509e499dad6f1e2adec  en_GB-cori-high.onnx.json
+469c630d209e139dd392a66bf4abde4ab86390a0269c1e47b4e5d7ce81526b01  en_GB-jenny_dioco-medium.onnx
+a9a7a93a317c9a3cb6563e37eb057df9ef09c06188a8a4341b0fcb58cba54dd4  en_GB-jenny_dioco-medium.onnx.json
+57a219ae8e638873db7d18893304be5069c42868f392bb95c3ff17f0690d0689  en_GB-northern_english_male-medium.onnx
+69557ed3d974463453e9b0c09dd99a7ed0e52b8b87b64b357dbeeb2540a97d47  en_GB-northern_english_male-medium.onnx.json
+b3a6e47b57b8c7fbe6a0ce2518161a50f59a9cdd8a50835c02cb02bdd6206c18  en_US-amy-medium.onnx
+95a23eb4d42909d38df73bb9ac7f45f597dbfcde2d1bf9526fdeaf5466977d77  en_US-amy-medium.onnx.json
+d11e403a02bdf5a670c877b3dc56e0e1c8cece6fb30289586314dffdc0a78cb0  en_US-hfc_male-medium.onnx
+f66847424aed0bf99ecbb5d7cfde47c0a906f426a0daf7c46f305e7d21afd886  en_US-hfc_male-medium.onnx.json
+58afce0321b8d9c46d7cdf9c16500cc55a793b4220212dba6b70fb788b3baf06  en_US-joe-medium.onnx
+3d6d5410b3795cb1950595247ef8f06190719e6fdbfa3a2356d8ec368e1aad33  en_US-joe-medium.onnx.json
+5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f  en_US-lessac-medium.onnx
+efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0  en_US-lessac-medium.onnx.json
+b3990d7606e183ec8dbfba70a4607074f162de1a0c412e0180d1ff60bb154eca  en_US-ryan-high.onnx
+c6d3b98f08315cb4bebf0d49d50fc4ff491b503c64b940cd3d5ca28543b48011  en_US-ryan-high.onnx.json

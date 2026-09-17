@@ -25,22 +25,31 @@ install_deps() {
   "$JARVIS_VENV/bin/pip" install -q --require-hashes --only-binary :all: -r "$ROOT/requirements.txt"
 }
 
-verify_file() { # verify_file PATH — check a downloaded artifact against models.sha256, else against the
-  # first-seen checksum in ~/.config/jarvis/voices.sha256 (recorded on first download). 0 ok, 1 mismatch.
-  local dir name sum pinned; dir="$(dirname "$1")"; name="$(basename "$1")"
-  local user_sums="$JARVIS_CONFIG_DIR/voices.sha256"
+pinned_sum() { # pinned_sum FILENAME — the sha256 recorded for that exact filename in models.sha256, or nothing
+  grep -E "^[0-9a-f]{64}  $1\$" "$ROOT/models.sha256" | head -1 | cut -d' ' -f1
+}
+
+verify_file() { # verify_file PATH — a downloaded artifact must match its pin in models.sha256; anything else is removed
+  local name sum pinned; name="$(basename "$1")"
+  pinned="$(pinned_sum "$name")"
   sum="$(sha256sum "$1" | cut -d' ' -f1)"
-  pinned="$(grep -h " $name\$" "$ROOT/models.sha256" "$user_sums" 2>/dev/null | head -1 | cut -d' ' -f1)"
   if [ -z "$pinned" ]; then
-    mkdir -p "$JARVIS_CONFIG_DIR"; echo "$sum  $name" >> "$user_sums"
-    echo "note: $name is not pinned in models.sha256; recorded sha256 $sum in $user_sums"
+    echo "$name is not pinned in models.sha256 — removed" >&2; rm -f "$1"; return 1
   elif [ "$sum" != "$pinned" ]; then
-    echo "CHECKSUM MISMATCH for $1 (expected $pinned, got $sum) — removed" >&2
-    rm -f "$1"; return 1
+    echo "CHECKSUM MISMATCH for $1 (expected $pinned, got $sum) — removed" >&2; rm -f "$1"; return 1
   fi
 }
 
-fetch_piper_voice() { # fetch_piper_voice NAME — download a Piper voice (model + config) and verify both files
+fetch_piper_voice() { # fetch_piper_voice NAME — download a Piper voice (model + config) and verify both files.
+  # Fails closed: the name must be a plain Piper voice id (lang_REGION-speaker-quality) with both
+  # files pinned in models.sha256 *before* anything is downloaded. No first-use trust, no other names.
+  local ok=0
+  case "$1" in [a-z][a-z]_[A-Z][A-Z]-*-*) case "$1" in *[!A-Za-z0-9_-]*) ;; *) ok=1 ;; esac ;; esac
+  if [ "$ok" = 0 ] || [ -z "$(pinned_sum "$1.onnx")" ] || [ -z "$(pinned_sum "$1.onnx.json")" ]; then
+    echo "voice '$1' is not pinned in models.sha256 — pick one of:" >&2
+    grep -oE ' [A-Za-z0-9_-]+\.onnx$' "$ROOT/models.sha256" | sed 's/^ /  /; s/\.onnx$//' >&2
+    return 1
+  fi
   mkdir -p "$JARVIS_VOICES"
   if [ ! -f "$JARVIS_VOICES/$1.onnx" ] || [ ! -f "$JARVIS_VOICES/$1.onnx.json" ]; then
     (cd "$JARVIS_VOICES" && "$JARVIS_VENV/bin/python" -m piper.download_voices "$1") || return 1
@@ -177,6 +186,8 @@ status)
   echo "log:          $JARVIS_LOG" ;;
 voices)
   echo "Installed Piper voices:"; ls "$JARVIS_VOICES" 2>/dev/null | grep '\.onnx$' | sed 's/\.onnx$//; s/^/  /'
+  echo "Piper voices available (pinned in models.sha256):"
+  grep -oE ' [A-Za-z0-9_-]+\.onnx$' "$ROOT/models.sha256" | sed 's/^ /  /; s/\.onnx$//'
   echo "Edge voices (British male picks): en-GB-RyanNeural en-GB-ThomasNeural en-US-GuyNeural en-US-ChristopherNeural"
   echo "Full list: $JARVIS_VENV/bin/edge-tts --list-voices" ;;
 voice) set_cfg JARVIS_EDGE_VOICE "$2"; echo "Edge voice set to $2"; JARVIS_EDGE_VOICE="$2" "$BIN/jarvis-say" --engine edge "This is $2, $JARVIS_ADDRESS." ;;
