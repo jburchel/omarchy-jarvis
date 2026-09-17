@@ -84,6 +84,7 @@ o.bind("code:108", "Toggle dictation", "jarvis dictate")
 |---|---|
 | `jarvis say "text"` | speak (queued) |
 | `jarvis say --low "text"` | speak only if idle — for chatter like tool narration |
+| `jarvis say --replace "text"` | speak, dropping any earlier `--replace` line still queued — for turn summaries, where only the latest matters |
 | `jarvis hush` | stop now, drop the queue |
 | `jarvis mute` / `unmute` / `toggle-mute` | silence until told otherwise |
 | `jarvis dictate` | hush, chime, run `JARVIS_DICTATE_CMD` (default `voxtype record toggle`) |

@@ -1,15 +1,17 @@
 #!/bin/bash
-# jarvis-say [--low] [--engine edge|piper|espeak] "text"   (or text on stdin)
+# jarvis-say [--low|--replace] [--engine edge|piper|espeak] "text"   (or text on stdin)
 # Synthesizes speech with Edge TTS, falling back to Piper, then espeak-ng,
 # and plays it. Playback is serialized with a lock; --low means "drop this
-# line if something is already speaking" (used for tool narration).
+# line if something is already speaking" (tool narration); --replace means "drop
+# any earlier --replace line still waiting" (turn summaries: only the latest matters).
 BIN="$(dirname "$(readlink -f "$0")")"
 . "$BIN/jarvis-env"
 
-low=0; engine="$JARVIS_ENGINE"
+low=0; replace=0; engine="$JARVIS_ENGINE"
 while [ $# -gt 0 ]; do
   case "$1" in
     --low) low=1; shift ;;
+    --replace) replace=1; shift ;;
     --engine) engine="$2"; shift 2 ;;
     --) shift; break ;;
     *) break ;;
@@ -36,6 +38,13 @@ for w, s in rules:
 print(t, end="")' "$JARVIS_CONFIG_DIR/pronounce.txt")"
 fi
 epoch_at_start="$(jarvis_epoch)"   # a hush after this point cancels the line
+# --replace: only the newest such line is worth hearing (a turn summary that a
+# later turn has already superseded). Claim the slot now; whoever holds it when
+# the lock is won gets spoken, the rest drop. Playing audio is never cut off.
+if [ "$replace" = 1 ]; then
+  replace_token="$$.$RANDOM"
+  printf '%s' "$replace_token" > "$JARVIS_CACHE/replace.token"
+fi
 
 lock="$JARVIS_CACHE/play.lock"
 out="$(mktemp "$JARVIS_CACHE/say.XXXXXX")"
@@ -118,6 +127,9 @@ else
 fi
 # If the user hushed while this line was waiting its turn, it is stale — drop it.
 if [ "$(jarvis_epoch)" != "$epoch_at_start" ]; then jarvis_log "dropped (hushed): $text"; exit 0; fi
+if [ "$replace" = 1 ] && [ "$(cat "$JARVIS_CACHE/replace.token" 2>/dev/null)" != "$replace_token" ]; then
+  jarvis_log "dropped (superseded): $text"; exit 0
+fi
 jarvis_state speaking
 if viz_on; then
   viz_ensure
