@@ -126,9 +126,10 @@ else
   flock -w 60 9
 fi
 # If the user hushed while this line was waiting its turn, it is stale — drop it.
-if [ "$(jarvis_epoch)" != "$epoch_at_start" ]; then jarvis_log "dropped (hushed): $text"; exit 0; fi
+# Dropped lines exit 3 so a caller chaining on success (the adapter's follow-up mic) knows.
+if [ "$(jarvis_epoch)" != "$epoch_at_start" ]; then jarvis_log "dropped (hushed): $text"; exit 3; fi
 if [ "$replace" = 1 ] && [ "$(cat "$JARVIS_CACHE/replace.token" 2>/dev/null)" != "$replace_token" ]; then
-  jarvis_log "dropped (superseded): $text"; exit 0
+  jarvis_log "dropped (superseded): $text"; exit 3
 fi
 jarvis_state speaking
 if viz_on; then
