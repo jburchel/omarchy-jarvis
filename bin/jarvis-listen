@@ -90,7 +90,7 @@ def main():
     max_wait = float(cfg.get("JARVIS_MAX_WAIT_SECS", "15"))
     # Consecutive speech frames before the recording counts as spoken: rejects the chime, clicks, coughs.
     min_speech_frames = max(1, round(float(cfg.get("JARVIS_SPEECH_MIN_SECS", "0.3")) / FRAME_SECS))
-    vox_state = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "voxtype", "state")
+    vox_state = os.path.join(cfg.get("XDG_RUNTIME_DIR", "/nonexistent"), "voxtype", "state")  # never /tmp
     muted_flag = os.path.join(cfg["JARVIS_CONFIG_DIR"], "muted")
 
     rec = subprocess.Popen(

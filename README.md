@@ -101,7 +101,10 @@ Settings live in `~/.config/jarvis/config.sh`; every key is documented with its 
 visualizer colours, …).
 
 State file: `$XDG_RUNTIME_DIR/jarvis-$UID/state` — `idle | speaking | listening | muted | off`.
-The bar widget watches it; so can anything else.
+The bar widget watches it; so can anything else. All runtime files live in that directory, which
+Jarvis creates mode 0700 and refuses to use unless it is a plain directory owned by you; there is
+no `/tmp` fallback. Without `XDG_RUNTIME_DIR` (a session outside logind) every command exits with
+an error unless `JARVIS_CACHE` points at a private directory.
 
 ## Hooking up an agent
 

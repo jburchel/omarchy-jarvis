@@ -112,7 +112,7 @@ unmute) rm -f "$JARVIS_CONFIG_DIR/muted"; jarvis_state idle; echo "Jarvis unmute
 toggle-mute) if jarvis_muted; then "$0" unmute; else "$0" mute; fi ;;
 hush)   hush ;;
 dictate)
-  vstate="$(cat "${XDG_RUNTIME_DIR:-/tmp}/voxtype/state" 2>/dev/null)"
+  vstate="$(cat "$XDG_RUNTIME_DIR/voxtype/state" 2>/dev/null)"   # Voxtype writes here; jarvis-env has already required XDG_RUNTIME_DIR
   if [ "$2" = stop ] || [ "$2" = cancel ]; then
     # Silence / spoken "Hey Jarvis, stop": end the recording (no-op if none) and hand the text to
     # Voxtype. "cancel" (nothing said after the wake word) drops it instead.

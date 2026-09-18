@@ -20,7 +20,7 @@ BarWidget {
   property string wakeActive: "unknown"   // active | inactive | unknown
 
   // $XDG_RUNTIME_DIR/jarvis-<uid>/state; the uid is the last path segment of the runtime dir.
-  readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
+  readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/run/user/1000"
   readonly property string uid: {
     const m = runtimeDir.match(/(\d+)\/?$/)
     return m ? m[1] : "1000"

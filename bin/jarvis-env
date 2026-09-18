@@ -3,7 +3,17 @@
 
 : "${JARVIS_HOME:=${JARVIS_HOME:-$HOME/.local/share/jarvis}}"
 : "${JARVIS_CONFIG_DIR:=${JARVIS_CONFIG_DIR:-$HOME/.config/jarvis}}"
-: "${JARVIS_CACHE:=${JARVIS_CACHE:-${XDG_RUNTIME_DIR:-/tmp}/jarvis-$UID}}"
+# Runtime files live under $XDG_RUNTIME_DIR (private, user-owned, cleared on reboot — logind
+# guarantees it) or an explicit $JARVIS_CACHE. Never a shared /tmp: another local user could
+# pre-create the directory and plant symlinks for our writes to follow.
+if [ -z "${JARVIS_CACHE:-}" ]; then
+  if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ ! -L "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ] && [ -O "$XDG_RUNTIME_DIR" ]; then
+    JARVIS_CACHE="$XDG_RUNTIME_DIR/jarvis-$UID"
+  else
+    echo "jarvis: no secure runtime directory — XDG_RUNTIME_DIR is unset or not a directory you own; set JARVIS_CACHE to a private one" >&2
+    exit 1
+  fi
+fi
 : "${JARVIS_VENV:=$JARVIS_HOME/venv}"
 : "${JARVIS_VOICES:=$JARVIS_HOME/voices}"
 : "${JARVIS_LOG:=$JARVIS_CACHE/jarvis.log}"
@@ -51,7 +61,14 @@
 
 [ -f "$JARVIS_CONFIG_DIR/config.sh" ] && . "$JARVIS_CONFIG_DIR/config.sh"
 
-mkdir -p "$JARVIS_CACHE"
+# Create the runtime directory privately and refuse anything that is not our own 0700 directory
+# (a symlink, someone else's directory, a file), so no write below it can be redirected.
+[ -e "$JARVIS_CACHE" ] || mkdir -m 0700 -p "$JARVIS_CACHE" 2>/dev/null
+if [ -L "$JARVIS_CACHE" ] || [ ! -d "$JARVIS_CACHE" ] || [ ! -O "$JARVIS_CACHE" ]; then
+  echo "jarvis: refusing runtime directory $JARVIS_CACHE — not a directory you own" >&2
+  exit 1
+fi
+chmod 0700 "$JARVIS_CACHE"
 
 # Runtime files shared with `jarvis hush`, the wake daemon and the Omarchy bar widget.
 JARVIS_STATE="$JARVIS_CACHE/state"          # idle | speaking | listening | muted | off
