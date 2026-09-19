@@ -29,11 +29,29 @@ ShellRoot {
     property var bars: []           // per-bar smoothed heights
     property real phase: 0          // slow rotation for the reactor rings
 
+    // Trust boundary: the caption is agent-generated speech and the envelope comes from
+    // whoever calls the IPC. Both are bounded here before anything is stored or rendered;
+    // the caption is drawn as plain text only (see textFormat below).
+    readonly property int captionMax: 400       // chars; the caption shows at most two elided lines
+    readonly property int envMaxChars: 65536    // ~10 min at 20 levels/s, "0.00," each
+    readonly property int envMaxLevels: 12000
+
+    function parseEnvelope(env) {
+        if (typeof env !== "string" || env.length === 0 || env.length > root.envMaxChars) return [];
+        const parts = env.split(",", root.envMaxLevels);
+        const out = [];
+        for (let i = 0; i < parts.length; i++) {
+            const v = Number(parts[i]);
+            out.push(Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
+        }
+        return out;
+    }
+
     IpcHandler {
         target: "viz"
         function speak(text: string, env: string): void {
-            root.caption = text;
-            root.levels = env.length ? env.split(",").map(Number) : [];
+            root.caption = typeof text === "string" ? text.slice(0, root.captionMax) : "";
+            root.levels = root.parseEnvelope(env);
             root.startMs = Date.now();
             root.speaking = true;
             hideTimer.stop();
@@ -183,6 +201,7 @@ ShellRoot {
 
         Text {
             text: root.caption
+            textFormat: Text.PlainText   // never interpret speech as rich text (no markup, no remote images)
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 18; bottomMargin: 16 }
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
