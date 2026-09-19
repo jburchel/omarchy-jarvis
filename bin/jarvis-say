@@ -1,6 +1,7 @@
 #!/bin/bash
-# jarvis-say [--low|--replace] [--engine edge|piper|espeak] "text"   (or text on stdin)
-# Synthesizes speech with Edge TTS, falling back to Piper, then espeak-ng,
+# printf '%s' "text" | jarvis-say [--low|--replace] [--engine edge|piper|espeak]
+# The text comes on stdin, never on the command line: it is agent output, and command
+# lines are visible to every local process. Synthesizes speech with Edge TTS, falling back to Piper, then espeak-ng,
 # and plays it. Playback is serialized with a lock; --low means "drop this
 # line if something is already speaking" (tool narration); --replace means "drop
 # any earlier --replace line still waiting" (turn summaries: only the latest matters).
@@ -13,12 +14,11 @@ while [ $# -gt 0 ]; do
     --low) low=1; shift ;;
     --replace) replace=1; shift ;;
     --engine) engine="$2"; shift 2 ;;
-    --) shift; break ;;
-    *) break ;;
+    *) echo "jarvis-say: text is read from stdin, not the command line: printf '%s' \"text\" | jarvis say [--low|--replace]" >&2; exit 2 ;;
   esac
 done
 umask 077   # every file this script creates (text handed to a synthesizer, audio, caption) is private
-text="$*"; [ -z "$text" ] && text="$(head -c $((JARVIS_SAY_MAX * 4)))"   # stdin: bounded read, ≤4 bytes/char
+text="$(head -c $((JARVIS_SAY_MAX * 4)))"   # bounded read, ≤4 bytes/char
 text="$(printf '%s' "$text" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
 text="${text:0:$JARVIS_SAY_MAX}"   # practical limit on one spoken line; longer text is cut, not refused
 [ -z "$text" ] && exit 0

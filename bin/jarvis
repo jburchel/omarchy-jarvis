@@ -2,7 +2,7 @@
 # jarvis <command>  — setup and control for the Jarvis voice plugin
 #   setup            install venv + pinned deps (requirements.txt), default voice, config
 #   test [engine]    speak a test line (engine: edge | piper | espeak)
-#   say "text"       speak arbitrary text
+#   say [--low|--replace]  speak the text on stdin: printf '%s' "text" | jarvis say
 #   mute | unmute    silence / restore all speech
 #   status           show engines, voices, config, mute state
 #   voices           list installed Piper voices and a few Edge suggestions
@@ -102,13 +102,13 @@ with wave.open(out, "w") as w:
     w.writeframes(b"".join(struct.pack("<h", int(s*32767)) for s in samples))
 PY
   jarvis_state idle
-  echo "Jarvis setup complete."; "$BIN/jarvis-say" "Setup complete, $JARVIS_ADDRESS. All systems online." ;;
+  echo "Jarvis setup complete."; printf '%s' "Setup complete, $JARVIS_ADDRESS. All systems online." | "$BIN/jarvis-say" ;;
 test)
   e="${2:-}"; [ -n "$e" ] && set -- --engine "$e" || set --
-  "$BIN/jarvis-say" "$@" "Good day, $JARVIS_ADDRESS. This is a test of the ${e:-primary} voice." ;;
-say)  shift; "$BIN/jarvis-say" "$@" ;;
+  printf '%s' "Good day, $JARVIS_ADDRESS. This is a test of the ${e:-primary} voice." | "$BIN/jarvis-say" "$@" ;;
+say)  shift; "$BIN/jarvis-say" "$@" ;;   # flags only; the text is read from stdin
 mute)   mkdir -p "$JARVIS_CONFIG_DIR"; touch "$JARVIS_CONFIG_DIR/muted"; hush; echo "Jarvis muted." ;;
-unmute) rm -f "$JARVIS_CONFIG_DIR/muted"; jarvis_state idle; echo "Jarvis unmuted."; "$BIN/jarvis-say" "Back online, $JARVIS_ADDRESS." ;;
+unmute) rm -f "$JARVIS_CONFIG_DIR/muted"; jarvis_state idle; echo "Jarvis unmuted."; printf '%s' "Back online, $JARVIS_ADDRESS." | "$BIN/jarvis-say" ;;
 toggle-mute) if jarvis_muted; then "$0" unmute; else "$0" mute; fi ;;
 hush)   hush ;;
 dictate)
@@ -137,7 +137,7 @@ pronounce)
   if [ -z "$2" ]; then cat "$f" 2>/dev/null || echo "no pronunciations yet: jarvis pronounce <word> <how to say it>"; exit 0; fi
   [ -z "$3" ] && { echo "usage: jarvis pronounce <word> <how to say it>"; exit 1; }
   touch "$f"; grep -iv "^$2=" "$f" > "$f.tmp"; printf '%s=%s\n' "$2" "$3" >> "$f.tmp"; mv -f "$f.tmp" "$f"
-  echo "$2 → $3"; "$BIN/jarvis-say" "The word $2, $JARVIS_ADDRESS." ;;
+  echo "$2 → $3"; printf '%s' "The word $2, $JARVIS_ADDRESS." | "$BIN/jarvis-say" ;;
 listen)
   case "${2:-status}" in
     run)    exec "$JARVIS_VENV/bin/python" "$BIN/jarvis-listen" ;;
@@ -190,10 +190,10 @@ voices)
   grep -oE ' [A-Za-z0-9_-]+\.onnx$' "$ROOT/models.sha256" | sed 's/^ /  /; s/\.onnx$//'
   echo "Edge voices (British male picks): en-GB-RyanNeural en-GB-ThomasNeural en-US-GuyNeural en-US-ChristopherNeural"
   echo "Full list: $JARVIS_VENV/bin/edge-tts --list-voices" ;;
-voice) set_cfg JARVIS_EDGE_VOICE "$2"; echo "Edge voice set to $2"; JARVIS_EDGE_VOICE="$2" "$BIN/jarvis-say" --engine edge "This is $2, $JARVIS_ADDRESS." ;;
+voice) set_cfg JARVIS_EDGE_VOICE "$2"; echo "Edge voice set to $2"; printf '%s' "This is $2, $JARVIS_ADDRESS." | JARVIS_EDGE_VOICE="$2" "$BIN/jarvis-say" --engine edge ;;
 piper-voice)
   fetch_piper_voice "$2" && set_cfg JARVIS_PIPER_VOICE "$2" \
-  && JARVIS_PIPER_VOICE="$2" "$BIN/jarvis-say" --engine piper "This is $2, $JARVIS_ADDRESS." ;;
+  && printf '%s' "This is $2, $JARVIS_ADDRESS." | JARVIS_PIPER_VOICE="$2" "$BIN/jarvis-say" --engine piper ;;
 log) tail -n "${2:-30}" "$JARVIS_LOG" 2>/dev/null || echo "no log yet" ;;
 lock) # maintainer: regenerate requirements.txt (all platforms, hashed) from requirements.in; needs uv
   uv pip compile --universal --generate-hashes --only-binary :all: --python-version 3.11 --no-header \

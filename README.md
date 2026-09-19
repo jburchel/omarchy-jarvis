@@ -82,9 +82,9 @@ o.bind("code:108", "Toggle dictation", "jarvis dictate")
 
 | | |
 |---|---|
-| `jarvis say "text"` | speak (queued) |
-| `jarvis say --low "text"` | speak only if idle — for chatter like tool narration |
-| `jarvis say --replace "text"` | speak, dropping any earlier `--replace` line still queued — for turn summaries, where only the latest matters |
+| `printf '%s' "text" \| jarvis say` | speak (queued). The text always comes on stdin — never on the command line, where every local process could read it |
+| `… \| jarvis say --low` | speak only if idle — for chatter like tool narration |
+| `… \| jarvis say --replace` | speak, dropping any earlier `--replace` line still queued — for turn summaries, where only the latest matters |
 | `jarvis hush` | stop now, drop the queue |
 | `jarvis mute` / `unmute` / `toggle-mute` | silence until told otherwise |
 | `jarvis dictate` | hush, chime, run `JARVIS_DICTATE_CMD` (default `voxtype record toggle`) |
@@ -108,18 +108,23 @@ an error unless `JARVIS_CACHE` points at a private directory.
 
 ## Hooking up an agent
 
-Jarvis doesn't know which LLM you use. Your agent calls the CLI at the right moments:
+Jarvis doesn't know which LLM you use. Your agent pipes text into the CLI at the right
+moments — always over stdin, so agent output (which can contain anything the agent saw)
+never appears in a process listing:
 
-- turn finished → `jarvis say "<short summary of the last message>"`
-- needs approval / input → `jarvis say "Sir, I need your approval."`
-- tool starting → `jarvis say --low "Editing config"`
+- turn finished → `printf '%s' "<short summary of the last message>" | jarvis say --replace`
+- needs approval / input → `printf '%s' "Sir, I need your approval." | jarvis say`
+- tool starting → `printf '%s' "Editing config" | jarvis say --low`
+
+`jarvis say` refuses text on its command line (exit 2). One line is cut at `JARVIS_SAY_MAX`
+characters (3000).
 
 **Claude Code:** a ready-made hooks plugin (Stop / Notification / PreToolUse / SessionStart,
 with Haiku summaries of long replies) lives in the companion repo
 [`jburchel/jarvis`](https://github.com/jburchel/jarvis).
 
 **Codex CLI:** point `notify` in `~/.codex/config.toml` at a script that reads the JSON
-payload and calls `jarvis say` on `agent-turn-complete`.
+payload and pipes the summary into `jarvis say` on `agent-turn-complete`.
 
 **Anything else:** if it has hooks, same pattern; if it doesn't,
 `agent … | tee /dev/tty | tail -n 5 | jarvis say`.
