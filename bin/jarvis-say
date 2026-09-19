@@ -17,10 +17,15 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
-text="$*"; [ -z "$text" ] && text="$(cat)"
+umask 077   # every file this script creates (text handed to a synthesizer, audio, caption) is private
+text="$*"; [ -z "$text" ] && text="$(head -c $((JARVIS_SAY_MAX * 4)))"   # stdin: bounded read, ≤4 bytes/char
 text="$(printf '%s' "$text" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
+text="${text:0:$JARVIS_SAY_MAX}"   # practical limit on one spoken line; longer text is cut, not refused
 [ -z "$text" ] && exit 0
 jarvis_muted && exit 0
+# What is spoken is never logged or put on a command line: it is agent output and can
+# contain anything the agent saw. Logs carry a fixed status plus the length.
+meta="${#text} chars"
 # Pronunciation fixes: ~/.config/jarvis/pronounce.txt, one `word=how to say it` per line,
 # whole-word, case-insensitive. Applied to what is spoken, not what is logged.
 spoken="$text"
@@ -53,9 +58,10 @@ trap 'rm -f "$out" "$out".*' EXIT
 # --- synthesis backends -------------------------------------------------------
 synth_edge() {
   [ -x "$JARVIS_VENV/bin/edge-tts" ] || return 1
+  printf '%s' "$spoken" > "$out.txt" || return 1
   timeout "$JARVIS_EDGE_TIMEOUT" "$JARVIS_VENV/bin/edge-tts" \
     --voice "$JARVIS_EDGE_VOICE" --rate="$JARVIS_EDGE_RATE" \
-    --text "$spoken" --write-media "$out.mp3" >/dev/null 2>&1 \
+    --file "$out.txt" --write-media "$out.mp3" >/dev/null 2>&1 \
     && [ -s "$out.mp3" ] && echo "$out.mp3"
 }
 synth_piper() {
@@ -68,7 +74,8 @@ synth_piper() {
 }
 synth_espeak() {
   command -v espeak-ng >/dev/null || return 1
-  espeak-ng -v en-gb -s 165 -w "$out.wav" "$spoken" >/dev/null 2>&1 \
+  printf '%s' "$spoken" > "$out.txt" || return 1
+  espeak-ng -v en-gb -s 165 -w "$out.wav" -f "$out.txt" >/dev/null 2>&1 \
     && [ -s "$out.wav" ] && echo "$out.wav"
 }
 
@@ -79,8 +86,8 @@ case "$engine" in
   espeak) file="$(synth_espeak)" ;;
   *)      file="$(synth_edge)" || file="$(synth_piper)" || file="$(synth_espeak)" ;;
 esac
-if [ -z "$file" ]; then jarvis_log "FAIL synth: $text"; exit 1; fi
-jarvis_log "say[${file##*.}$([ "$low" = 1 ] && echo " low")]: $text"
+if [ -z "$file" ]; then jarvis_log "FAIL synth ($meta)"; exit 1; fi
+jarvis_log "say[${file##*.}$([ "$low" = 1 ] && echo " low")$([ "$replace" = 1 ] && echo " replace")] $meta"
 
 # --- playback -------------------------------------------------------------------
 play() {
@@ -112,7 +119,7 @@ viz_ensure() {
   export JARVIS_VIZ_GLOW="${JARVIS_VIZ_GLOW:-$(theme_color accent green '#39A949')}"
   export JARVIS_VIZ_FG="${JARVIS_VIZ_FG:-$(theme_color foreground '' '#C9D4E0')}"
   export JARVIS_VIZ_BG="${JARVIS_VIZ_BG:-$(theme_color background '' '#0C1B2E')}"
-  export JARVIS_VIZ_FONT
+  export JARVIS_VIZ_FONT JARVIS_CACHE   # the overlay reads the caption from $JARVIS_CACHE/caption
   # 9>&- : the daemon must not inherit the play lock fd, or it holds the lock forever.
   qs -p "$VIZ_DIR" -n -d >/dev/null 2>&1 9>&- || true
 }
@@ -127,14 +134,16 @@ else
 fi
 # If the user hushed while this line was waiting its turn, it is stale — drop it.
 # Dropped lines exit 3 so a caller chaining on success (the adapter's follow-up mic) knows.
-if [ "$(jarvis_epoch)" != "$epoch_at_start" ]; then jarvis_log "dropped (hushed): $text"; exit 3; fi
+if [ "$(jarvis_epoch)" != "$epoch_at_start" ]; then jarvis_log "dropped (hushed) $meta"; exit 3; fi
 if [ "$replace" = 1 ] && [ "$(cat "$JARVIS_CACHE/replace.token" 2>/dev/null)" != "$replace_token" ]; then
-  jarvis_log "dropped (superseded): $text"; exit 3
+  jarvis_log "dropped (superseded) $meta"; exit 3
 fi
 jarvis_state speaking
 if viz_on; then
   viz_ensure
-  viz_call speak "$text" "$("$BIN/jarvis-envelope" "$file")"
+  # The caption travels through a private file (the IPC arguments are process metadata).
+  printf '%s' "${text:0:400}" > "$JARVIS_CACHE/caption.tmp" && mv -f "$JARVIS_CACHE/caption.tmp" "$JARVIS_CACHE/caption"
+  viz_call speak "$("$BIN/jarvis-envelope" "$file")"
   play "$file"
   viz_call stop
 else

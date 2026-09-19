@@ -25,6 +25,7 @@ fi
 : "${JARVIS_PIPER_VOICE:=en_GB-alan-medium}"     # https://rhasspy.github.io/piper-samples/
 : "${JARVIS_PIPER_LENGTH:=1.0}"                  # <1 faster, >1 slower
 : "${JARVIS_EDGE_TIMEOUT:=8}"                      # seconds before falling back to Piper
+: "${JARVIS_SAY_MAX:=3000}"                       # longest line spoken, in characters (~3 min); the rest is cut
 : "${JARVIS_SUMMARY:=haiku}"                     # haiku | heuristic | full
 : "${JARVIS_SUMMARY_MODEL:=haiku}"
 : "${JARVIS_SHORT_MSG_CHARS:=220}"                 # replies shorter than this are read as-is

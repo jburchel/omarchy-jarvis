@@ -145,6 +145,10 @@ outside those paths and `$XDG_RUNTIME_DIR/jarvis-$UID/` (cleared on reboot).
   Nothing is recorded or sent anywhere. While Voxtype is recording, the daemon only measures
   whether you are still talking (Silero VAD, also local) and listens for a second "Hey Jarvis".
 - Dictation itself is Voxtype's — whisper.cpp, local.
+- What Jarvis says is agent output and may contain anything the agent saw. `jarvis-say` never
+  logs it (`jarvis.log` records status and length only) and never puts it on a command line
+  (synthesizers read it from a mode-0600 file in the private runtime directory; the overlay
+  reads its caption from another). One line is cut at `JARVIS_SAY_MAX` characters (3000).
 
 ## License
 

@@ -3,8 +3,11 @@
 // loudness envelope, and a caption of what is being said.
 //
 // Driven over IPC by bin/jarvis-say:
-//   qs -p <this dir> ipc call viz speak "<caption>" "<lvl,lvl,...>"   (20 levels/s, 0..1)
+//   qs -p <this dir> ipc call viz speak "<lvl,lvl,...>"   (20 levels/s, 0..1)
 //   qs -p <this dir> ipc call viz stop
+// The caption is not an IPC argument (arguments are process metadata visible to other
+// local users): jarvis-say writes it to the private $JARVIS_CACHE/caption and the
+// overlay reads that file when `speak` arrives.
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -33,6 +36,15 @@ ShellRoot {
     // whoever calls the IPC. Both are bounded here before anything is stored or rendered;
     // the caption is drawn as plain text only (see textFormat below).
     readonly property int captionMax: 400       // chars; the caption shows at most two elided lines
+    readonly property string captionPath: (Quickshell.env("JARVIS_CACHE") || "") + "/caption"
+
+    FileView {
+        id: captionFile
+        path: root.captionPath
+        printErrors: false
+        onLoaded: root.caption = String(text() || "").slice(0, root.captionMax)
+        onLoadFailed: root.caption = ""
+    }
     readonly property int envMaxChars: 65536    // ~10 min at 20 levels/s, "0.00," each
     readonly property int envMaxLevels: 12000
 
@@ -49,8 +61,8 @@ ShellRoot {
 
     IpcHandler {
         target: "viz"
-        function speak(text: string, env: string): void {
-            root.caption = typeof text === "string" ? text.slice(0, root.captionMax) : "";
+        function speak(env: string): void {
+            captionFile.reload();
             root.levels = root.parseEnvelope(env);
             root.startMs = Date.now();
             root.speaking = true;
