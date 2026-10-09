@@ -1,6 +1,8 @@
-# Jarvis for Omarchy
+# Jarvis for AI Agents
 
-A voice for whatever AI agent you're running in the terminal — with a way to shut it up.
+**Your coding agent, out loud.** A voice for whatever AI agent you're running in the terminal
+(Claude Code, Codex, Gemini CLI), with a way to shut it up, and a wake word so you can talk back
+without touching the keyboard.
 
 - **Speaks** with free neural TTS: Edge TTS online, Piper offline, espeak-ng as a last resort.
 - **Interrupts**: `jarvis hush` stops playback and drops the queue. Bound to a key, and to your
@@ -154,6 +156,18 @@ outside those paths and `$XDG_RUNTIME_DIR/jarvis-$UID/` (cleared on reboot).
   logs it (`jarvis.log` records status and length only) and never puts it on a command line
   (synthesizers read it from a mode-0600 file in the private runtime directory; the overlay
   reads its caption from another). One line is cut at `JARVIS_SAY_MAX` characters (3000).
+
+## More Omarchy plugins by Jim Burchel
+
+- **[Meeting Mode](https://github.com/jburchel/omarchy-meeting-mode)**: join any call and your
+  desktop goes quiet by itself (Do Not Disturb, no idle lock, night light off, and Jarvis
+  muted); hang up and it all comes back.
+- **[Workspace Names & Icons](https://github.com/jburchel/omarchy-workspace-nameplates)**: give
+  every workspace a name and an icon right in the bar. Double-click to edit; the numbers stay.
+- **[Omarchy Alt-Tab](https://github.com/jburchel/omarchy-alt-tab)**: hold Alt and tap Tab
+  through live previews of your windows, like Windows and macOS.
+
+If Jarvis made your agent easier to work with, a ⭐ on GitHub helps other people find it.
 
 ## License
 

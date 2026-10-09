@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "io.github.jburchel.jarvis",
-  "name": "Jarvis",
-  "version": "0.1.0",
+  "name": "Jarvis for AI Agents",
+  "version": "0.1.1",
   "author": "Jim Burchel",
   "license": "MIT",
-  "description": "Jarvis voice assistant: state indicator, mute, hush, and 'Hey Jarvis' wake word control",
+  "description": "A voice for the AI agent in your terminal: Claude Code, Codex and Gemini CLI read their replies aloud with free neural voices. Say \"Hey Jarvis\" to dictate your answer hands-free, and hush it with one key. Bar widget shows speaking, listening and muted.",
   "kinds": [
     "bar-widget"
   ],
